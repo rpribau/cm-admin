@@ -1,0 +1,300 @@
+[
+  {
+    "id": 1,
+    "header": "Resumen Ejecutivo",
+    "type": "Alta",
+    "status": "Completado",
+    "target": "18",
+    "limit": "5",
+    "limit_date": "2024-07-15",
+    "reviewer": "Eddie Lake",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "approved",
+        "date": "2024-06-28"
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "approved",
+        "date": "2024-06-30"
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "approved",
+        "date": "2024-07-01"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "header": "Enfoque Técnico",
+    "type": "Marketing",
+    "status": "En Proceso",
+    "target": "29",
+    "limit": "24",
+    "limit_date": "2024-07-20",
+    "reviewer": "Jamik Tashpulatov",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "approved",
+        "date": "2024-07-05"
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "pending",
+        "date": ""
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "header": "Análisis de Mercado",
+    "type": "Marketing",
+    "status": "No Iniciado",
+    "target": "10",
+    "limit": "13",
+    "limit_date": "2024-07-25",
+    "reviewer": "Asignar revisor",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "pending",
+        "date": ""
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "header": "Estrategia de Ventas",
+    "type": "Marketing",
+    "status": "No Iniciado",
+    "limit_date": "2024-08-01",
+    "reviewer": "Asignar revisor",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "pending",
+        "date": ""
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "header": "Integración de Pagos",
+    "type": "Pagos",
+    "status": "Rechazado",
+    "target": "2",
+    "limit": "16",
+    "limit_date": "2024-07-10",
+    "reviewer": "Carlos Méndez",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "rejected",
+        "date": "2024-06-25"
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "rejected",
+        "date": "2024-06-26"
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "pending",
+        "date": ""
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "header": "Soporte Técnico",
+    "type": "Servicios",
+    "status": "En Proceso",
+    "target": "20",
+    "limit": "8",
+    "limit_date": "2024-07-30",
+    "reviewer": "María García",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "approved",
+        "date": "2024-07-02"
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "pending",
+        "date": ""
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "header": "Documentación API",
+    "type": "Servicios",
+    "status": "No Iniciado",
+    "target": "19",
+    "limit": "21",
+    "limit_date": "2024-08-05",
+    "reviewer": "Asignar revisor",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "pending",
+        "date": ""
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "header": "Política de Privacidad",
+    "type": "Otros",
+    "status": "Completado",
+    "target": "25",
+    "limit": "26",
+    "limit_date": "2024-06-30",
+    "reviewer": "Laura Sánchez",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "approved",
+        "date": "2024-06-15"
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "approved",
+        "date": "2024-06-18"
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "approved",
+        "date": "2024-06-20"
+      }
+    ]
+  },
+  {
+    "id": 9,
+    "header": "Términos de Servicio",
+    "type": "Otros",
+    "status": "No Iniciado",
+    "target": "7",
+    "limit": "23",
+    "limit_date": "2024-08-10",
+    "reviewer": "Asignar revisor",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "pending",
+        "date": ""
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "pending",
+        "date": ""
+      }
+    ]
+  },
+  {
+    "id": 10,
+    "header": "Registro de Usuarios",
+    "type": "Alta",
+    "status": "En Proceso",
+    "target": "30",
+    "limit": "28",
+    "limit_date": "2024-07-18",
+    "reviewer": "Jamik Tashpulatov",
+    "authorizations": [
+      {
+        "name": "Carlos Méndez",
+        "role": "Director de Proyecto",
+        "status": "approved",
+        "date": "2024-07-01"
+      },
+      {
+        "name": "María García",
+        "role": "Gerente de Calidad",
+        "status": "rejected",
+        "date": "2024-07-05"
+      },
+      {
+        "name": "Laura Sánchez",
+        "role": "Directora Financiera",
+        "status": "pending",
+        "date": ""
+      }
+    ]
+  }
+]
