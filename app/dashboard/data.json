@@ -2,7 +2,7 @@
   {
     "id": 1,
     "header": "Resumen Ejecutivo",
-    "type": "Alta",
+    "type": "Humanitario",
     "status": "Completado",
     "target": "18",
     "limit": "5",
@@ -32,7 +32,7 @@
   {
     "id": 2,
     "header": "Enfoque Técnico",
-    "type": "Marketing",
+    "type": "Psicosocial",
     "status": "En Proceso",
     "target": "29",
     "limit": "24",
@@ -62,7 +62,7 @@
   {
     "id": 3,
     "header": "Análisis de Mercado",
-    "type": "Marketing",
+    "type": "Psicosocial",
     "status": "No Iniciado",
     "target": "10",
     "limit": "13",
@@ -92,7 +92,7 @@
   {
     "id": 4,
     "header": "Estrategia de Ventas",
-    "type": "Marketing",
+    "type": "Psicosocial",
     "status": "No Iniciado",
     "limit_date": "2024-08-01",
     "reviewer": "Asignar revisor",
@@ -120,7 +120,7 @@
   {
     "id": 5,
     "header": "Integración de Pagos",
-    "type": "Pagos",
+    "type": "Legal",
     "status": "Rechazado",
     "target": "2",
     "limit": "16",
@@ -150,7 +150,7 @@
   {
     "id": 6,
     "header": "Soporte Técnico",
-    "type": "Servicios",
+    "type": "Comunicación",
     "status": "En Proceso",
     "target": "20",
     "limit": "8",
@@ -180,7 +180,7 @@
   {
     "id": 7,
     "header": "Documentación API",
-    "type": "Servicios",
+    "type": "Comunicación",
     "status": "No Iniciado",
     "target": "19",
     "limit": "21",
@@ -210,7 +210,7 @@
   {
     "id": 8,
     "header": "Política de Privacidad",
-    "type": "Otros",
+    "type": "Almacén",
     "status": "Completado",
     "target": "25",
     "limit": "26",
@@ -240,7 +240,7 @@
   {
     "id": 9,
     "header": "Términos de Servicio",
-    "type": "Otros",
+    "type": "Almacén",
     "status": "No Iniciado",
     "target": "7",
     "limit": "23",
@@ -270,7 +270,7 @@
   {
     "id": 10,
     "header": "Registro de Usuarios",
-    "type": "Alta",
+    "type": "Humanitario",
     "status": "En Proceso",
     "target": "30",
     "limit": "28",

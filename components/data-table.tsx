@@ -320,11 +320,11 @@ export function DataTable({
   const counts = React.useMemo(() => {
     const result = {
       todos: { total: 0, noIniciado: 0 },
-      alta: { total: 0, noIniciado: 0 },
-      marketing: { total: 0, noIniciado: 0 },
-      servicios: { total: 0, noIniciado: 0 },
-      pagos: { total: 0, noIniciado: 0 },
-      otros: { total: 0, noIniciado: 0 },
+      humanitario: { total: 0, noIniciado: 0 },
+      psicosocial: { total: 0, noIniciado: 0 },
+      legal: { total: 0, noIniciado: 0 },
+      comunicacion: { total: 0, noIniciado: 0 },
+      almacen: { total: 0, noIniciado: 0 },
     }
 
     data.forEach((item) => {
@@ -337,25 +337,27 @@ export function DataTable({
 
       // Map the type to our categories
       switch (type) {
-        case "alta":
-          result.alta.total++
-          if (item.status === "No Iniciado") result.alta.noIniciado++
+        case "humanitario":
+          result.humanitario.total++
+          if (item.status === "No Iniciado") result.humanitario.noIniciado++
           break
-        case "marketing":
-          result.marketing.total++
-          if (item.status === "No Iniciado") result.marketing.noIniciado++
+        case "psicosocial":
+          result.psicosocial.total++
+          if (item.status === "No Iniciado") result.psicosocial.noIniciado++
           break
-        case "servicios":
-          result.servicios.total++
-          if (item.status === "No Iniciado") result.servicios.noIniciado++
+        case "legal":
+          result.legal.total++
+          if (item.status === "No Iniciado") result.legal.noIniciado++
           break
-        case "pagos":
-          result.pagos.total++
-          if (item.status === "No Iniciado") result.pagos.noIniciado++
+        case "comunicación":
+        case "comunicacion":
+          result.comunicacion.total++
+          if (item.status === "No Iniciado") result.comunicacion.noIniciado++
           break
-        case "otros":
-          result.otros.total++
-          if (item.status === "No Iniciado") result.otros.noIniciado++
+        case "almacén":
+        case "almacen":
+          result.almacen.total++
+          if (item.status === "No Iniciado") result.almacen.noIniciado++
           break
       }
     })
@@ -424,43 +426,43 @@ export function DataTable({
                 </Badge>
               )}
             </SelectItem>
-            <SelectItem value="alta">
-              Alta
-              {counts.alta.noIniciado > 0 && (
+            <SelectItem value="humanitario">
+              Humanitario
+              {counts.humanitario.noIniciado > 0 && (
                 <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-800">
-                  {counts.alta.noIniciado}
+                  {counts.humanitario.noIniciado}
                 </Badge>
               )}
             </SelectItem>
-            <SelectItem value="marketing">
-              Marketing
-              {counts.marketing.noIniciado > 0 && (
+            <SelectItem value="psicosocial">
+              Psicosocial
+              {counts.psicosocial.noIniciado > 0 && (
                 <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-800">
-                  {counts.marketing.noIniciado}
+                  {counts.psicosocial.noIniciado}
                 </Badge>
               )}
             </SelectItem>
-            <SelectItem value="servicios">
-              Servicios
-              {counts.servicios.noIniciado > 0 && (
+            <SelectItem value="legal">
+              Legal
+              {counts.legal.noIniciado > 0 && (
                 <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-800">
-                  {counts.servicios.noIniciado}
+                  {counts.legal.noIniciado}
                 </Badge>
               )}
             </SelectItem>
-            <SelectItem value="pagos">
-              Pagos
-              {counts.pagos.noIniciado > 0 && (
+            <SelectItem value="comunicacion">
+              Comunicación
+              {counts.comunicacion.noIniciado > 0 && (
                 <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-800">
-                  {counts.pagos.noIniciado}
+                  {counts.comunicacion.noIniciado}
                 </Badge>
               )}
             </SelectItem>
-            <SelectItem value="otros">
-              Otros
-              {counts.otros.noIniciado > 0 && (
+            <SelectItem value="almacen">
+              Almacén
+              {counts.almacen.noIniciado > 0 && (
                 <Badge variant="secondary" className="ml-2 bg-blue-100 text-blue-800">
-                  {counts.otros.noIniciado}
+                  {counts.almacen.noIniciado}
                 </Badge>
               )}
             </SelectItem>
@@ -478,58 +480,58 @@ export function DataTable({
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="alta" className="flex items-center gap-1">
-            Alta
-            {counts.alta.noIniciado > 0 && (
+          <TabsTrigger value="humanitario" className="flex items-center gap-1">
+            Humanitario
+            {counts.humanitario.noIniciado > 0 && (
               <Badge
                 variant="secondary"
                 className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-blue-800"
               >
-                {counts.alta.noIniciado}
+                {counts.humanitario.noIniciado}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="marketing" className="flex items-center gap-1">
-            Marketing
-            {counts.marketing.noIniciado > 0 && (
+          <TabsTrigger value="psicosocial" className="flex items-center gap-1">
+            Psicosocial
+            {counts.psicosocial.noIniciado > 0 && (
               <Badge
                 variant="secondary"
                 className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-blue-800"
               >
-                {counts.marketing.noIniciado}
+                {counts.psicosocial.noIniciado}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="servicios" className="flex items-center gap-1">
-            Servicios
-            {counts.servicios.noIniciado > 0 && (
+          <TabsTrigger value="legal" className="flex items-center gap-1">
+            Legal
+            {counts.legal.noIniciado > 0 && (
               <Badge
                 variant="secondary"
                 className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-blue-800"
               >
-                {counts.servicios.noIniciado}
+                {counts.legal.noIniciado}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="pagos" className="flex items-center gap-1">
-            Pagos
-            {counts.pagos.noIniciado > 0 && (
+          <TabsTrigger value="comunicacion" className="flex items-center gap-1">
+            Comunicación
+            {counts.comunicacion.noIniciado > 0 && (
               <Badge
                 variant="secondary"
                 className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-blue-800"
               >
-                {counts.pagos.noIniciado}
+                {counts.comunicacion.noIniciado}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="otros" className="flex items-center gap-1">
-            Otros
-            {counts.otros.noIniciado > 0 && (
+          <TabsTrigger value="almacen" className="flex items-center gap-1">
+            Almacén
+            {counts.almacen.noIniciado > 0 && (
               <Badge
                 variant="secondary"
                 className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100 text-blue-800"
               >
-                {counts.otros.noIniciado}
+                {counts.almacen.noIniciado}
               </Badge>
             )}
           </TabsTrigger>
@@ -668,14 +670,14 @@ export function DataTable({
           </div>
         </div>
       </TabsContent>
-      <TabsContent value="alta" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
+      <TabsContent value="humanitario" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
         <div className="overflow-hidden rounded-lg border">
           <DndContext
             collisionDetection={closestCenter}
             modifiers={[restrictToVerticalAxis]}
             onDragEnd={handleDragEnd}
             sensors={sensors}
-            id={`${sortableId}-alta`}
+            id={`${sortableId}-humanitario`}
           >
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-muted">
@@ -694,12 +696,12 @@ export function DataTable({
                 ))}
               </TableHeader>
               <TableBody className="**:data-[slot=table-cell]:first:w-8">
-                {getFilteredData("alta").length > 0 ? (
+                {getFilteredData("humanitario").length > 0 ? (
                   <SortableContext
-                    items={getFilteredData("alta").map((item) => item.id)}
+                    items={getFilteredData("humanitario").map((item) => item.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    {getFilteredData("alta").map((item) => {
+                    {getFilteredData("humanitario").map((item) => {
                       const row = table.getRow(item.id.toString())
                       return row ? <DraggableRow key={row.id} row={row} /> : null
                     })}
@@ -716,14 +718,14 @@ export function DataTable({
           </DndContext>
         </div>
       </TabsContent>
-      <TabsContent value="marketing" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
+      <TabsContent value="psicosocial" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
         <div className="overflow-hidden rounded-lg border">
           <DndContext
             collisionDetection={closestCenter}
             modifiers={[restrictToVerticalAxis]}
             onDragEnd={handleDragEnd}
             sensors={sensors}
-            id={`${sortableId}-marketing`}
+            id={`${sortableId}-psicosocial`}
           >
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-muted">
@@ -742,12 +744,12 @@ export function DataTable({
                 ))}
               </TableHeader>
               <TableBody className="**:data-[slot=table-cell]:first:w-8">
-                {getFilteredData("marketing").length > 0 ? (
+                {getFilteredData("psicosocial").length > 0 ? (
                   <SortableContext
-                    items={getFilteredData("marketing").map((item) => item.id)}
+                    items={getFilteredData("psicosocial").map((item) => item.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    {getFilteredData("marketing").map((item) => {
+                    {getFilteredData("psicosocial").map((item) => {
                       const row = table.getRow(item.id.toString())
                       return row ? <DraggableRow key={row.id} row={row} /> : null
                     })}
@@ -764,14 +766,14 @@ export function DataTable({
           </DndContext>
         </div>
       </TabsContent>
-      <TabsContent value="servicios" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
+      <TabsContent value="legal" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
         <div className="overflow-hidden rounded-lg border">
           <DndContext
             collisionDetection={closestCenter}
             modifiers={[restrictToVerticalAxis]}
             onDragEnd={handleDragEnd}
             sensors={sensors}
-            id={`${sortableId}-servicios`}
+            id={`${sortableId}-legal`}
           >
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-muted">
@@ -790,12 +792,12 @@ export function DataTable({
                 ))}
               </TableHeader>
               <TableBody className="**:data-[slot=table-cell]:first:w-8">
-                {getFilteredData("servicios").length > 0 ? (
+                {getFilteredData("legal").length > 0 ? (
                   <SortableContext
-                    items={getFilteredData("servicios").map((item) => item.id)}
+                    items={getFilteredData("legal").map((item) => item.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    {getFilteredData("servicios").map((item) => {
+                    {getFilteredData("legal").map((item) => {
                       const row = table.getRow(item.id.toString())
                       return row ? <DraggableRow key={row.id} row={row} /> : null
                     })}
@@ -812,14 +814,14 @@ export function DataTable({
           </DndContext>
         </div>
       </TabsContent>
-      <TabsContent value="pagos" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
+      <TabsContent value="comunicacion" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
         <div className="overflow-hidden rounded-lg border">
           <DndContext
             collisionDetection={closestCenter}
             modifiers={[restrictToVerticalAxis]}
             onDragEnd={handleDragEnd}
             sensors={sensors}
-            id={`${sortableId}-pagos`}
+            id={`${sortableId}-comunicacion`}
           >
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-muted">
@@ -838,12 +840,12 @@ export function DataTable({
                 ))}
               </TableHeader>
               <TableBody className="**:data-[slot=table-cell]:first:w-8">
-                {getFilteredData("pagos").length > 0 ? (
+                {getFilteredData("comunicación").length > 0 ? (
                   <SortableContext
-                    items={getFilteredData("pagos").map((item) => item.id)}
+                    items={getFilteredData("comunicación").map((item) => item.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    {getFilteredData("pagos").map((item) => {
+                    {getFilteredData("comunicación").map((item) => {
                       const row = table.getRow(item.id.toString())
                       return row ? <DraggableRow key={row.id} row={row} /> : null
                     })}
@@ -860,14 +862,14 @@ export function DataTable({
           </DndContext>
         </div>
       </TabsContent>
-      <TabsContent value="otros" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
+      <TabsContent value="almacen" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
         <div className="overflow-hidden rounded-lg border">
           <DndContext
             collisionDetection={closestCenter}
             modifiers={[restrictToVerticalAxis]}
             onDragEnd={handleDragEnd}
             sensors={sensors}
-            id={`${sortableId}-otros`}
+            id={`${sortableId}-almacen`}
           >
             <Table>
               <TableHeader className="sticky top-0 z-10 bg-muted">
@@ -886,12 +888,12 @@ export function DataTable({
                 ))}
               </TableHeader>
               <TableBody className="**:data-[slot=table-cell]:first:w-8">
-                {getFilteredData("otros").length > 0 ? (
+                {getFilteredData("almacén").length > 0 ? (
                   <SortableContext
-                    items={getFilteredData("otros").map((item) => item.id)}
+                    items={getFilteredData("almacén").map((item) => item.id)}
                     strategy={verticalListSortingStrategy}
                   >
-                    {getFilteredData("otros").map((item) => {
+                    {getFilteredData("almacén").map((item) => {
                       const row = table.getRow(item.id.toString())
                       return row ? <DraggableRow key={row.id} row={row} /> : null
                     })}
@@ -1037,16 +1039,91 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
 
           <Separator />
 
-        
+          {/* Formulario de edición */}
+          <form className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
+              <Label htmlFor="header">Encabezado</Label>
+              <Input id="header" defaultValue={item.header} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-3">
+                <Label htmlFor="type">Tipo</Label>
+                <Select defaultValue={item.type}>
+                  <SelectTrigger id="type" className="w-full">
+                    <SelectValue placeholder="Seleccionar un tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Humanitario">Humanitario</SelectItem>
+                    <SelectItem value="Psicosocial">Psicosocial</SelectItem>
+                    <SelectItem value="Legal">Legal</SelectItem>
+                    <SelectItem value="Comunicación">Comunicación</SelectItem>
+                    <SelectItem value="Almacén">Almacén</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-3">
+                <Label htmlFor="status">Estado</Label>
+                <Select defaultValue={item.status}>
+                  <SelectTrigger id="status" className="w-full">
+                    <SelectValue placeholder="Seleccionar un estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Completado">Completado</SelectItem>
+                    <SelectItem value="En Proceso">En Proceso</SelectItem>
+                    <SelectItem value="No Iniciado">No Iniciado</SelectItem>
+                    <SelectItem value="Rechazado">Rechazado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-col gap-3">
+              <Label htmlFor="limit_date">Fecha Límite</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start text-left font-normal">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {item.limit_date}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={new Date(item.limit_date)}
+                    onSelect={(date) => {
+                      if (date) {
+                        toast.success("Fecha actualizada")
+                      }
+                    }}
+                    initialFocus
+                    locale={es}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+            <div className="flex flex-col gap-3">
+              <Label htmlFor="reviewer">Revisor</Label>
+              <Select defaultValue={item.reviewer}>
+                <SelectTrigger id="reviewer" className="w-full">
+                  <SelectValue placeholder="Seleccionar un revisor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
+                  <SelectItem value="Jamik Tashpulatov">Jamik Tashpulatov</SelectItem>
+                  <SelectItem value="Carlos Méndez">Carlos Méndez</SelectItem>
+                  <SelectItem value="María García">María García</SelectItem>
+                  <SelectItem value="Laura Sánchez">Laura Sánchez</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </form>
         </div>
         <SheetFooter className="mt-auto flex gap-2 sm:flex-col sm:space-x-0">
-          <Button className="w-full">Editar</Button>
-          <Button variant="destructive" className="w-full">
-            Eliminar
-          </Button>
-          <Button variant="outline" className="w-full">
-            Cancelar
-          </Button>
+          <Button className="w-full">Guardar</Button>
+          <SheetClose asChild>
+            <Button variant="outline" className="w-full">
+              Cancelar
+            </Button>
+          </SheetClose>
         </SheetFooter>
       </SheetContent>
     </Sheet>
