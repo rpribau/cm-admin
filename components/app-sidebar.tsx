@@ -117,13 +117,8 @@ const data = {
       name: "Informes",
       url: "#",
       icon: ClipboardListIcon,
-    },
-    {
-      name: "Asistente de Texto",
-      url: "#",
-      icon: FileIcon,
-    },
-  ],
+    } 
+  ]
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {

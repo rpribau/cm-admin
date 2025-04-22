@@ -38,23 +38,22 @@ import {
   ChevronRightIcon,
   ChevronsLeftIcon,
   ChevronsRightIcon,
-  ClockIcon,
   GripVerticalIcon,
-  LoaderIcon,
+  Loader2,
   MoreVerticalIcon,
   PlusIcon,
   SearchIcon,
   XCircleIcon,
+  ClockIcon,
 } from "lucide-react"
 import { es } from "date-fns/locale"
 import { toast } from "sonner"
 import { z } from "zod"
 
+import { AddSectionForm } from "./add-section-form"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
@@ -65,21 +64,16 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ExternalLinkIcon, LinkIcon } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card"
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
+import { Calendar } from "./ui/calendar"
+import { SheetClose, SheetFooter } from "./ui/sheet"
+import { Separator } from "./ui/separator"
 
 // Definición del esquema de autorización
 const authorizationSchema = z.object({
@@ -89,6 +83,7 @@ const authorizationSchema = z.object({
   date: z.string(),
 })
 
+// Actualizar el esquema para incluir los enlaces
 export const schema = z.object({
   id: z.number(),
   header: z.string(),
@@ -98,7 +93,25 @@ export const schema = z.object({
   limit: z.string().optional(),
   limit_date: z.string(),
   reviewer: z.string(),
-  authorizations: z.array(authorizationSchema).optional(),
+  authorizations: z
+    .array(
+      z.object({
+        name: z.string(),
+        role: z.string(),
+        status: z.enum(["approved", "rejected", "pending"]),
+        date: z.string(),
+      }),
+    )
+    .optional(),
+  links: z
+    .array(
+      z.object({
+        id: z.string(),
+        title: z.string(),
+        url: z.string(),
+      }),
+    )
+    .optional(),
 })
 
 // Create a separate component for the drag handle
@@ -159,7 +172,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
     accessorKey: "header",
     header: "Encabezado",
     cell: ({ row }) => {
-      return <TableCellViewer item={row.original} />
+      return <TableCellViewerComponent item={row.original} />
     },
     enableHiding: false,
   },
@@ -188,7 +201,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
           colorClass = "text-green-500 dark:text-green-400"
           break
         case "En Proceso":
-          icon = <LoaderIcon className="text-yellow-500 dark:text-yellow-400" />
+          icon = <Loader2 className="text-yellow-500 dark:text-yellow-400" />
           colorClass = "text-yellow-500 dark:text-yellow-400"
           break
         case "No Iniciado":
@@ -315,6 +328,55 @@ export function DataTable({
   const sensors = useSensors(useSensor(MouseSensor, {}), useSensor(TouchSensor, {}), useSensor(KeyboardSensor, {}))
 
   const dataIds = React.useMemo<UniqueIdentifier[]>(() => data?.map(({ id }) => id) || [], [data])
+
+  // Actualizar la función handleAddSection para incluir los enlaces
+  const handleAddSection = (formData: {
+    header: string
+    type: string
+    limit_date: string
+    reviewer: string
+    links?: { id: string; title: string; url: string }[]
+  }) => {
+    // Crear un nuevo ID (el máximo ID actual + 1)
+    const newId = Math.max(...data.map((item) => item.id)) + 1
+
+    // Crear el nuevo registro con estado "No Iniciado"
+    const newSection: z.infer<typeof schema> = {
+      id: newId,
+      header: formData.header,
+      type: formData.type,
+      status: "No Iniciado",
+      limit_date: formData.limit_date,
+      reviewer: formData.reviewer,
+      links: formData.links || [],
+      authorizations: [
+        {
+          name: "Carlos Méndez",
+          role: "Director de Proyecto",
+          status: "pending",
+          date: "",
+        },
+        {
+          name: "María García",
+          role: "Gerente de Calidad",
+          status: "pending",
+          date: "",
+        },
+        {
+          name: "Laura Sánchez",
+          role: "Directora Financiera",
+          status: "pending",
+          date: "",
+        },
+      ],
+    }
+
+    // Añadir el nuevo registro al principio de los datos
+    setData([newSection, ...data])
+
+    // Mostrar mensaje de éxito
+    toast.success("Sección añadida correctamente")
+  }
 
   // Count items by type and status
   const counts = React.useMemo(() => {
@@ -546,10 +608,21 @@ export function DataTable({
               onChange={(event) => table.getColumn("header")?.setFilterValue(event.target.value)}
             />
           </div>
-          <Button variant="outline" size="sm">
-            <PlusIcon />
-            <span className="hidden lg:inline">Añadir Sección</span>
-          </Button>
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm">
+                <PlusIcon className="h-4 w-4 mr-2" />
+                <span className="hidden lg:inline">Añadir Sección</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="flex flex-col">
+              <SheetHeader className="gap-1">
+                <SheetTitle>Añadir Nueva Sección</SheetTitle>
+                <SheetDescription>Completa los detalles para crear una nueva sección.</SheetDescription>
+              </SheetHeader>
+              <AddSectionForm onAddSection={handleAddSection} />
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
       <TabsContent value="todos" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
@@ -670,6 +743,7 @@ export function DataTable({
           </div>
         </div>
       </TabsContent>
+      {/* Resto de las pestañas de contenido... */}
       <TabsContent value="humanitario" className="relative flex flex-col gap-4 overflow-auto px-4 lg:px-6">
         <div className="overflow-hidden rounded-lg border">
           <DndContext
@@ -914,7 +988,8 @@ export function DataTable({
   )
 }
 
-function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
+// Actualizar el componente TableCellViewer para mostrar los enlaces
+function TableCellViewerComponent({ item }: { item: z.infer<typeof schema> }) {
   const isMobile = useIsMobile()
 
   return (
@@ -953,7 +1028,7 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
                     {item.status === "Completado" ? (
                       <CheckCircle2Icon className="h-4 w-4 text-green-500" />
                     ) : item.status === "En Proceso" ? (
-                      <LoaderIcon className="h-4 w-4 text-yellow-500" />
+                      <Loader2 className="h-4 w-4 text-yellow-500" />
                     ) : item.status === "No Iniciado" ? (
                       <AlertCircleIcon className="h-4 w-4 text-blue-500" />
                     ) : (
@@ -987,6 +1062,40 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
                 )}
               </CardContent>
             </Card>
+
+            {/* Sección de Enlaces a Documentos */}
+            {item.links && item.links.length > 0 && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Enlaces a Documentos</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-3 text-sm">
+                  {item.links.map((link, index) => (
+                    <div
+                      key={link.id || index}
+                      className="flex items-center justify-between border-b pb-2 last:border-0 last:pb-0"
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <LinkIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{link.title}</p>
+                          <p className="truncate text-xs text-muted-foreground">{link.url}</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => window.open(link.url, "_blank")}
+                      >
+                        <ExternalLinkIcon className="h-4 w-4" />
+                        <span className="sr-only">Abrir enlace</span>
+                      </Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Sección de Autorizaciones y Firmas */}
             <Card>
@@ -1041,12 +1150,12 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
 
           {/* Formulario de edición */}
           <form className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 m-4">
               <Label htmlFor="header">Encabezado</Label>
               <Input id="header" defaultValue={item.header} />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 m-4">
                 <Label htmlFor="type">Tipo</Label>
                 <Select defaultValue={item.type}>
                   <SelectTrigger id="type" className="w-full">
@@ -1061,7 +1170,7 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 m-4">
                 <Label htmlFor="status">Estado</Label>
                 <Select defaultValue={item.status}>
                   <SelectTrigger id="status" className="w-full">
@@ -1076,7 +1185,7 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
                 </Select>
               </div>
             </div>
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 m-4">
               <Label htmlFor="limit_date">Fecha Límite</Label>
               <Popover>
                 <PopoverTrigger asChild>
@@ -1100,7 +1209,7 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
                 </PopoverContent>
               </Popover>
             </div>
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 m-4">
               <Label htmlFor="reviewer">Revisor</Label>
               <Select defaultValue={item.reviewer}>
                 <SelectTrigger id="reviewer" className="w-full">
