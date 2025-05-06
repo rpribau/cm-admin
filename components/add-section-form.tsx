@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SheetClose, SheetFooter } from "@/components/ui/sheet"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { useAuth } from "@/contexts/auth-provider"
 
 // Esquema para validación
 const sectionSchema = z.object({
@@ -48,9 +49,10 @@ interface AddSectionFormProps {
 }
 
 export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
+  const { user, userType } = useAuth()
   const [formData, setFormData] = React.useState<FormData>({
     header: "",
-    type: "Humanitario",
+    type: userType ? userType.charAt(0).toUpperCase() + userType.slice(1) : "Humanitario",
     limit_date: new Date().toISOString().split("T")[0],
     reviewer: "Asignar revisor",
     links: [],
@@ -145,8 +147,8 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-4 overflow-y-auto py-5">
-      <div className="flex flex-col gap-1 m-4">
+    <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-4 overflow-y-auto py-4">
+      <div className="flex flex-col gap-3">
         <Label htmlFor="header" className="flex items-center">
           Encabezado <span className="ml-1 text-red-500">*</span>
         </Label>
@@ -158,7 +160,7 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
         />
       </div>
 
-      <div className="flex flex-col gap-1 m-4">
+      <div className="flex flex-col gap-3">
         <Label htmlFor="type" className="flex items-center">
           Tipo <span className="ml-1 text-red-500">*</span>
         </Label>
@@ -167,16 +169,16 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
             <SelectValue placeholder="Seleccionar tipo" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="Humanitario">Humanitario</SelectItem>
-            <SelectItem value="Psicosocial">Psicosocial</SelectItem>
-            <SelectItem value="Legal">Legal</SelectItem>
-            <SelectItem value="Comunicación">Comunicación</SelectItem>
-            <SelectItem value="Almacén">Almacén</SelectItem>
+            {(!userType || userType === "humanitario") && <SelectItem value="Humanitario">Humanitario</SelectItem>}
+            {(!userType || userType === "psicosocial") && <SelectItem value="Psicosocial">Psicosocial</SelectItem>}
+            {(!userType || userType === "legal") && <SelectItem value="Legal">Legal</SelectItem>}
+            {(!userType || userType === "comunicacion") && <SelectItem value="Comunicación">Comunicación</SelectItem>}
+            {(!userType || userType === "almacen") && <SelectItem value="Almacén">Almacén</SelectItem>}
           </SelectContent>
         </Select>
       </div>
 
-      <div className="flex flex-col gap-1 m-4">
+      <div className="flex flex-col gap-3">
         <Label htmlFor="limit_date" className="flex items-center">
           Fecha Límite <span className="ml-1 text-red-500">*</span>
         </Label>
@@ -187,13 +189,13 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
               {date ? date.toLocaleDateString() : "Seleccionar fecha"}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-0 " align="start">
+          <PopoverContent className="w-auto p-0" align="start">
             <Calendar mode="single" selected={date} onSelect={setDate} initialFocus locale={es} />
           </PopoverContent>
         </Popover>
       </div>
 
-      <div className="flex flex-col gap-1 m-4">
+      <div className="flex flex-col gap-3">
         <Label htmlFor="reviewer">Revisor</Label>
         <Select value={formData.reviewer} onValueChange={(value) => setFormData({ ...formData, reviewer: value })}>
           <SelectTrigger id="reviewer">
@@ -213,7 +215,7 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
       {/* Nueva sección para enlaces a SharePoint/OneDrive */}
       <Separator className="my-2" />
 
-      <div className="flex flex-col gap-3 m-4">
+      <div className="flex flex-col gap-3">
         <Label className="text-base font-medium">Enlaces a documentos</Label>
         <p className="text-sm text-muted-foreground">
           Añade enlaces a documentos almacenados en SharePoint o OneDrive.

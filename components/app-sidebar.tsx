@@ -11,6 +11,7 @@ import {
   FileIcon,
   FileTextIcon,
   FolderIcon,
+  PenToolIcon,
   SettingsIcon,
   UsersIcon,
 } from "lucide-react"
@@ -27,7 +28,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from "@/components/ui/sidebar"
+import { useAuth } from "@/contexts/auth-context"
 
 const data = {
   user: {
@@ -117,11 +120,18 @@ const data = {
       name: "Informes",
       url: "#",
       icon: ClipboardListIcon,
-    } 
-  ]
+    },
+    {
+      name: "Asistente de Texto",
+      url: "#",
+      icon: FileIcon,
+    },
+  ],
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { isSuperuser } = useAuth()
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -130,7 +140,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
               <a href="#">
                 <ArrowUpCircleIcon className="h-5 w-5" />
-                <span className="text-base font-semibold">Casa Monarca</span>
+                <span className="text-base font-semibold">Acme Inc.</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -139,6 +149,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent>
         <NavMain items={data.navMain} />
         <NavDocuments items={data.documents} />
+
+        {/* Opción "Crear firmas" solo visible para superusuarios */}
+        {isSuperuser && (
+          <>
+            <SidebarSeparator />
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <a href="/dashboard/firmas">
+                    <PenToolIcon className="h-4 w-4" />
+                    <span>Crear firmas</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </>
+        )}
+
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>

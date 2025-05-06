@@ -27,7 +27,21 @@
         "status": "approved",
         "date": "2024-07-01"
       }
-    ]
+    ],
+    "links": [
+      {
+        "id": "1",
+        "title": "Documento de Requisitos",
+        "url": "https://example.com/docs/req"
+      },
+      {
+        "id": "2",
+        "title": "Plan de Proyecto",
+        "url": "https://example.com/docs/plan"
+      }
+    ],
+    "description": "Este documento proporciona un resumen ejecutivo del proyecto humanitario, incluyendo objetivos, alcance y resultados esperados.",
+    "notes": "Aprobado por el comité directivo en la reunión del 28 de junio de 2024."
   },
   {
     "id": 2,
@@ -57,7 +71,10 @@
         "status": "pending",
         "date": ""
       }
-    ]
+    ],
+    "links": [],
+    "description": "Documento técnico que detalla la metodología y enfoque psicosocial del proyecto.",
+    "notes": "Pendiente de revisión final por parte del equipo de calidad."
   },
   {
     "id": 3,
@@ -87,7 +104,10 @@
         "status": "pending",
         "date": ""
       }
-    ]
+    ],
+    "links": [],
+    "description": "",
+    "notes": ""
   },
   {
     "id": 4,
@@ -115,7 +135,10 @@
         "status": "pending",
         "date": ""
       }
-    ]
+    ],
+    "links": [],
+    "description": "",
+    "notes": ""
   },
   {
     "id": 5,
@@ -145,7 +168,16 @@
         "status": "pending",
         "date": ""
       }
-    ]
+    ],
+    "links": [
+      {
+        "id": "3",
+        "title": "Documentación Legal",
+        "url": "https://example.com/docs/legal"
+      }
+    ],
+    "description": "Documento sobre la integración de sistemas de pago en la plataforma.",
+    "notes": "Rechazado por incumplimiento de requisitos legales. Se requiere una revisión completa."
   },
   {
     "id": 6,
@@ -175,7 +207,10 @@
         "status": "pending",
         "date": ""
       }
-    ]
+    ],
+    "links": [],
+    "description": "Plan de soporte técnico para usuarios de la plataforma.",
+    "notes": "En revisión por el equipo de comunicación."
   },
   {
     "id": 7,
@@ -205,7 +240,10 @@
         "status": "pending",
         "date": ""
       }
-    ]
+    ],
+    "links": [],
+    "description": "",
+    "notes": ""
   },
   {
     "id": 8,
@@ -235,7 +273,21 @@
         "status": "approved",
         "date": "2024-06-20"
       }
-    ]
+    ],
+    "links": [
+      {
+        "id": "4",
+        "title": "Documento de Política de Privacidad",
+        "url": "https://example.com/docs/privacy"
+      },
+      {
+        "id": "5",
+        "title": "Anexo Legal",
+        "url": "https://example.com/docs/privacy-legal"
+      }
+    ],
+    "description": "Política de privacidad oficial de la organización.",
+    "notes": "Aprobado por el departamento legal y el comité directivo."
   },
   {
     "id": 9,
@@ -265,7 +317,10 @@
         "status": "pending",
         "date": ""
       }
-    ]
+    ],
+    "links": [],
+    "description": "",
+    "notes": ""
   },
   {
     "id": 10,
@@ -295,6 +350,15 @@
         "status": "pending",
         "date": ""
       }
-    ]
+    ],
+    "links": [
+      {
+        "id": "6",
+        "title": "Formulario de Registro",
+        "url": "https://example.com/docs/registration"
+      }
+    ],
+    "description": "Procedimiento para el registro de usuarios en la plataforma humanitaria.",
+    "notes": "Requiere revisión adicional por parte del equipo de calidad."
   }
 ]
