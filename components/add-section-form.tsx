@@ -4,6 +4,7 @@ import * as React from "react"
 import { CalendarIcon, Loader2, LinkIcon, PlusIcon, Trash2Icon, ExternalLinkIcon } from "lucide-react"
 import { es } from "date-fns/locale"
 import { z } from "zod"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
@@ -15,6 +16,7 @@ import { SheetClose, SheetFooter } from "@/components/ui/sheet"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/contexts/auth-provider"
+import { documentoCompletoApi } from "@/lib/api-service"
 
 // Esquema para validación
 const sectionSchema = z.object({
@@ -72,21 +74,58 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
     url: false,
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
-    // Actualizar la fecha límite con el valor del calendario
-    const updatedFormData = {
-      ...formData,
-      limit_date: date ? date.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
-    }
+    try {
+      // Actualizar la fecha límite con el valor del calendario
+      const updatedFormData = {
+        ...formData,
+        limit_date: date ? date.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+      }
 
-    // Simular un tiempo de carga
-    setTimeout(() => {
+      // Convertir al formato de la API
+      const apiDocument = documentoCompletoApi.mapToApiFormat({
+        id: null,
+        ...updatedFormData,
+        status: "No Iniciado",
+        description: "",
+        authorizations: [
+          {
+            name: "Carlos Méndez",
+            role: "Director de Proyecto",
+            status: "pending",
+            date: "",
+          },
+          {
+            name: "María García",
+            role: "Gerente de Calidad",
+            status: "pending",
+            date: "",
+          },
+          {
+            name: "Laura Sánchez",
+            role: "Directora Financiera",
+            status: "pending",
+            date: "",
+          },
+        ],
+      })
+
+      // Crear el documento a través de la API
+      await documentoCompletoApi.create(apiDocument)
+
+      // Llamar al callback con los datos del formulario
       onAddSection(updatedFormData)
+
+      toast.success("Sección añadida correctamente")
+    } catch (error) {
+      console.error("Error al crear documento:", error)
+      toast.error("Error al crear la sección")
+    } finally {
       setLoading(false)
-    }, 500)
+    }
   }
 
   // Función para agregar un nuevo enlace

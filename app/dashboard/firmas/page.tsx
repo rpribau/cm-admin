@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, PenToolIcon, PlusIcon, Trash2Icon, UserIcon } from "lucide-react"
+import { Loader2, PlusIcon, UserIcon, KeyIcon, ShieldCheckIcon, EyeIcon, EyeOffIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -12,129 +12,143 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/contexts/auth-context"
 import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-
-// Tipo para las firmas
-interface Signature {
-  id: string
-  name: string
-  role: string
-  department: string
-  createdAt: string
-}
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  accountDetailsApi,
+  accountAccessApi,
+  type accountDetailsApi,
+  type AccountDetailsResponse,
+  type AccountAccessCreate,
+  type AccountAccessResponse,
+} from "@/lib/api-service"
 
 export default function FirmasPage() {
   const router = useRouter()
   const { user, isSuperuser, isLoading: authLoading } = useAuth()
   const [isLoading, setIsLoading] = useState(true)
-  const [signatures, setSignatures] = useState<Signature[]>([])
-  const [newSignature, setNewSignature] = useState({
-    name: "",
-    role: "",
-    department: "humanitario",
-  })
+  const [accountDetails, setAccountDetails] = useState<AccountDetailsResponse[]>([])
+  const [digitalSignatures, setDigitalSignatures] = useState<AccountAccessResponse[]>([])
   const [isSaving, setIsSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState("users")
+  const [showPrivateKeys, setShowPrivateKeys] = useState<{ [key: number]: boolean }>({})
 
-  // Verificar si el usuario es superusuario
+  // Form states
+  const [newUser, setNewUser] = useState<AccountDetailsCreate>({
+    id_casamonarca: 1,
+    name: "",
+    email: "",
+    password: "",
+    type: "humanitario",
+    authorizacion: false,
+  })
+
+  const [newSignature, setNewSignature] = useState<AccountAccessCreate>({
+    id_account_details: 0,
+    numero_empleado: "",
+    signer_name: "",
+  })
+
+  // Check access and load data
   useEffect(() => {
-    const checkAccess = async () => {
+    const checkAccessAndLoadData = async () => {
       setIsLoading(true)
       try {
-        // Wait for auth to be ready
-        if (authLoading) {
-          return
-        }
+        if (authLoading) return
 
         if (!user) {
-          // Si no hay usuario, redirigir al login
           router.push("/login")
           return
         }
 
         if (!isSuperuser) {
-          // Si no es superusuario, redirigir al dashboard
           toast.error("No tienes permisos para acceder a esta página")
           router.push("/dashboard")
           return
         }
 
-        // Cargar firmas (simulado)
-        // En una implementación real, esto sería una llamada a la API
-        setTimeout(() => {
-          setSignatures([
-            {
-              id: "1",
-              name: "Carlos Méndez",
-              role: "Director de Proyecto",
-              department: "humanitario",
-              createdAt: "2024-05-15",
-            },
-            {
-              id: "2",
-              name: "María García",
-              role: "Gerente de Calidad",
-              department: "psicosocial",
-              createdAt: "2024-05-16",
-            },
-            {
-              id: "3",
-              name: "Laura Sánchez",
-              role: "Directora Financiera",
-              department: "legal",
-              createdAt: "2024-05-17",
-            },
-          ])
-          setIsLoading(false)
-        }, 1000)
+        // Load account details and digital signatures
+        const [users, signatures] = await Promise.all([accountDetailsApi.getAll(), accountAccessApi.getAll()])
+
+        setAccountDetails(users)
+        setDigitalSignatures(signatures)
       } catch (error) {
-        console.error("Error al verificar acceso:", error)
+        console.error("Error loading data:", error)
+        toast.error("Error al cargar los datos")
+      } finally {
         setIsLoading(false)
       }
     }
 
-    checkAccess()
+    checkAccessAndLoadData()
   }, [user, isSuperuser, router, authLoading])
 
-  // Función para añadir una nueva firma
-  const handleAddSignature = () => {
-    if (!newSignature.name || !newSignature.role || !newSignature.department) {
+  // Create new user
+  const handleCreateUser = async () => {
+    if (!newUser.name || !newUser.email || !newUser.password) {
+      toast.error("Todos los campos obligatorios deben completarse")
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const createdUser = await accountDetailsApi.create(newUser)
+      setAccountDetails([...accountDetails, createdUser])
+      setNewUser({
+        id_casamonarca: 1,
+        name: "",
+        email: "",
+        password: "",
+        type: "humanitario",
+        authorizacion: false,
+      })
+      toast.success("Usuario creado correctamente")
+    } catch (error) {
+      console.error("Error creating user:", error)
+      toast.error("Error al crear el usuario")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  // Create digital signature
+  const handleCreateSignature = async () => {
+    if (!newSignature.id_account_details || !newSignature.numero_empleado || !newSignature.signer_name) {
       toast.error("Todos los campos son obligatorios")
       return
     }
 
     setIsSaving(true)
-
-    // Simular una llamada a la API
-    setTimeout(() => {
-      const newSignatureItem: Signature = {
-        id: `new-${Date.now()}`,
-        name: newSignature.name,
-        role: newSignature.role,
-        department: newSignature.department,
-        createdAt: new Date().toISOString().split("T")[0],
-      }
-
-      setSignatures([...signatures, newSignatureItem])
+    try {
+      const createdSignature = await accountAccessApi.create(newSignature)
+      setDigitalSignatures([...digitalSignatures, createdSignature])
       setNewSignature({
-        name: "",
-        role: "",
-        department: "humanitario",
+        id_account_details: 0,
+        numero_empleado: "",
+        signer_name: "",
       })
+      toast.success("Firma digital creada correctamente")
+    } catch (error) {
+      console.error("Error creating digital signature:", error)
+      toast.error("Error al crear la firma digital")
+    } finally {
       setIsSaving(false)
-      toast.success("Firma añadida correctamente")
-    }, 1000)
+    }
   }
 
-  // Función para eliminar una firma
-  const handleDeleteSignature = (id: string) => {
-    setSignatures(signatures.filter((signature) => signature.id !== id))
-    toast.success("Firma eliminada correctamente")
+  // Toggle private key visibility
+  const togglePrivateKeyVisibility = (signatureId: number) => {
+    setShowPrivateKeys((prev) => ({
+      ...prev,
+      [signatureId]: !prev[signatureId],
+    }))
   }
 
-  // Renderizar el departamento con un badge
-  const renderDepartment = (department: string) => {
+  // Render department badge
+  const renderDepartment = (type: string) => {
     let color = ""
-    switch (department) {
+    switch (type.toLowerCase()) {
       case "humanitario":
         color = "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
         break
@@ -155,8 +169,8 @@ export default function FirmasPage() {
     }
 
     return (
-      <Badge variant="outline" className={`${color}`}>
-        {department.charAt(0).toUpperCase() + department.slice(1)}
+      <Badge variant="outline" className={color}>
+        {type.charAt(0).toUpperCase() + type.slice(1)}
       </Badge>
     )
   }
@@ -175,126 +189,284 @@ export default function FirmasPage() {
   }
 
   return (
-    <div className="container mx-auto py-6 m-x-4 md:py-8 md:px-6 lg:px-8">
+    <div className="container mx-auto py-6 px-5">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Gestión de Firmas</h1>
-        <p className="text-muted-foreground">Crea y administra las firmas para los documentos</p>
+        <h1 className="text-2xl font-bold">Gestión de Usuarios y Firmas Digitales</h1>
+        <p className="text-muted-foreground">Administra usuarios y crea firmas digitales para los documentos</p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Formulario para añadir firmas */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <PenToolIcon className="h-5 w-5" />
-              Crear Nueva Firma
-            </CardTitle>
-            <CardDescription>Añade una nueva firma para los documentos</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Nombre completo</Label>
-              <Input
-                id="name"
-                placeholder="Ej: Juan Pérez"
-                value={newSignature.name}
-                onChange={(e) => setNewSignature({ ...newSignature, name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="role">Cargo</Label>
-              <Input
-                id="role"
-                placeholder="Ej: Director de Proyecto"
-                value={newSignature.role}
-                onChange={(e) => setNewSignature({ ...newSignature, role: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="department">Departamento</Label>
-              <Select
-                value={newSignature.department}
-                onValueChange={(value) => setNewSignature({ ...newSignature, department: value })}
-              >
-                <SelectTrigger id="department">
-                  <SelectValue placeholder="Seleccionar departamento" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="humanitario">Humanitario</SelectItem>
-                  <SelectItem value="psicosocial">Psicosocial</SelectItem>
-                  <SelectItem value="legal">Legal</SelectItem>
-                  <SelectItem value="comunicacion">Comunicación</SelectItem>
-                  <SelectItem value="almacen">Almacén</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-          <CardFooter>
-            <Button onClick={handleAddSignature} disabled={isSaving} className="w-full">
-              {isSaving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Guardando...
-                </>
-              ) : (
-                <>
-                  <PlusIcon className="mr-2 h-4 w-4" />
-                  Añadir Firma
-                </>
-              )}
-            </Button>
-          </CardFooter>
-        </Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="users" className="flex items-center gap-2">
+            <UserIcon className="h-4 w-4" />
+            Usuarios ({accountDetails.length})
+          </TabsTrigger>
+          <TabsTrigger value="signatures" className="flex items-center gap-2">
+            <KeyIcon className="h-4 w-4" />
+            Firmas Digitales ({digitalSignatures.length})
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Lista de firmas existentes */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserIcon className="h-5 w-5" />
-              Firmas Existentes
-            </CardTitle>
-            <CardDescription>Listado de todas las firmas disponibles</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {signatures.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Cargo</TableHead>
-                    <TableHead>Departamento</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {signatures.map((signature) => (
-                    <TableRow key={signature.id}>
-                      <TableCell className="font-medium">{signature.name}</TableCell>
-                      <TableCell>{signature.role}</TableCell>
-                      <TableCell>{renderDepartment(signature.department)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteSignature(signature.id)}
-                          className="h-8 w-8 text-destructive"
-                        >
-                          <Trash2Icon className="h-4 w-4" />
-                          <span className="sr-only">Eliminar</span>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="flex h-40 items-center justify-center rounded-md border border-dashed">
-                <p className="text-center text-muted-foreground">No hay firmas registradas</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+        <TabsContent value="users" className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Create User Form */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserIcon className="h-5 w-5" />
+                  Crear Nuevo Usuario
+                </CardTitle>
+                <CardDescription>Añade un nuevo usuario al sistema</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="user-name">Nombre completo *</Label>
+                  <Input
+                    id="user-name"
+                    placeholder="Ej: Juan Pérez"
+                    value={newUser.name}
+                    onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-email">Email *</Label>
+                  <Input
+                    id="user-email"
+                    type="email"
+                    placeholder="juan.perez@empresa.com"
+                    value={newUser.email}
+                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-password">Contraseña *</Label>
+                  <Input
+                    id="user-password"
+                    type="password"
+                    placeholder="Contraseña segura"
+                    value={newUser.password}
+                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="user-type">Tipo de usuario</Label>
+                  <Select value={newUser.type} onValueChange={(value) => setNewUser({ ...newUser, type: value })}>
+                    <SelectTrigger id="user-type">
+                      <SelectValue placeholder="Seleccionar tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="humanitario">Humanitario</SelectItem>
+                      <SelectItem value="psicosocial">Psicosocial</SelectItem>
+                      <SelectItem value="legal">Legal</SelectItem>
+                      <SelectItem value="comunicacion">Comunicación</SelectItem>
+                      <SelectItem value="almacen">Almacén</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="user-auth"
+                    checked={newUser.authorizacion}
+                    onCheckedChange={(checked) => setNewUser({ ...newUser, authorizacion: !!checked })}
+                  />
+                  <Label htmlFor="user-auth">Autorización especial</Label>
+                </div>
+              </CardContent>
+              <CardFooter>
+                <Button onClick={handleCreateUser} disabled={isSaving} className="w-full">
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creando...
+                    </>
+                  ) : (
+                    <>
+                      <PlusIcon className="mr-2 h-4 w-4" />
+                      Crear Usuario
+                    </>
+                  )}
+                </Button>
+              </CardFooter>
+            </Card>
+
+            {/* Users List */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Usuarios Registrados</CardTitle>
+                <CardDescription>Lista de todos los usuarios en el sistema</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {accountDetails.length > 0 ? (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {accountDetails.map((user) => (
+                      <div key={user.id} className="flex items-center justify-between rounded-md border p-3">
+                        <div>
+                          <p className="font-medium">{user.name}</p>
+                          <p className="text-sm text-muted-foreground">{user.email}</p>
+                          <div className="mt-1 flex items-center gap-2">
+                            {renderDepartment(user.type)}
+                            {user.authorizacion && (
+                              <Badge variant="outline" className="bg-green-50 text-green-700">
+                                <ShieldCheckIcon className="mr-1 h-3 w-3" />
+                                Autorizado
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-40 items-center justify-center rounded-md border border-dashed">
+                    <p className="text-center text-muted-foreground">No hay usuarios registrados</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="signatures" className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Create Digital Signature Form */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <KeyIcon className="h-5 w-5" />
+                  Crear Firma Digital
+                </CardTitle>
+                <CardDescription>Genera una nueva firma digital para un usuario</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="sig-user">Usuario *</Label>
+                  <Select
+                    value={newSignature.id_account_details.toString()}
+                    onValueChange={(value) =>
+                      setNewSignature({ ...newSignature, id_account_details: Number.parseInt(value) })
+                    }
+                  >
+                    <SelectTrigger id="sig-user">
+                      <SelectValue placeholder="Seleccionar usuario" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accountDetails.map((user) => (
+                        <SelectItem key={user.id} value={user.id.toString()}>
+                          {user.name} - {user.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sig-employee">Número de empleado *</Label>
+                  <Input
+                    id="sig-employee"
+                    placeholder="EMP001"
+                    value={newSignature.numero_empleado}
+                    onChange={(e) => setNewSignature({ ...newSignature, numero_empleado: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sig-name">Nombre del firmante *</Label>
+                  <Input
+                    id="sig-name"
+                    placeholder="Nombre para la firma"
+                    value={newSignature.signer_name}
+                    onChange={(e) => setNewSignature({ ...newSignature, signer_name: e.target.value })}
+                  />
+                </div>
+              </CardContent>
+              <CardFooter>
+                <Button
+                  onClick={handleCreateSignature}
+                  disabled={isSaving || accountDetails.length === 0}
+                  className="w-full"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generando...
+                    </>
+                  ) : (
+                    <>
+                      <KeyIcon className="mr-2 h-4 w-4" />
+                      Generar Firma Digital
+                    </>
+                  )}
+                </Button>
+              </CardFooter>
+            </Card>
+
+            {/* Digital Signatures List */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Firmas Digitales</CardTitle>
+                <CardDescription>Firmas digitales generadas en el sistema</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {digitalSignatures.length > 0 ? (
+                  <div className="space-y-4 max-h-96 overflow-y-auto">
+                    {digitalSignatures.map((signature) => {
+                      const user = accountDetails.find((u) => u.id === signature.id_account_details)
+                      return (
+                        <div key={signature.id} className="rounded-md border p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <p className="font-medium">{signature.signer_name}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {user?.name} - {signature.numero_empleado}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="bg-green-50 text-green-700">
+                              <KeyIcon className="mr-1 h-3 w-3" />
+                              Activa
+                            </Badge>
+                          </div>
+
+                          <div className="space-y-2 text-xs">
+                            <div>
+                              <Label className="text-xs font-medium">Clave Pública (PEM):</Label>
+                              <Textarea value={signature.public_key} readOnly className="mt-1 h-20 text-xs font-mono" />
+                            </div>
+
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <Label className="text-xs font-medium">Clave Privada (PEM):</Label>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => togglePrivateKeyVisibility(signature.id)}
+                                  className="h-6 px-2"
+                                >
+                                  {showPrivateKeys[signature.id] ? (
+                                    <EyeOffIcon className="h-3 w-3" />
+                                  ) : (
+                                    <EyeIcon className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </div>
+                              <Textarea
+                                value={showPrivateKeys[signature.id] ? signature.private_key : "Clave Privada Oculta"}
+                                readOnly
+                                className="mt-1 h-20 text-xs font-mono"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex h-40 items-center justify-center rounded-md border border-dashed">
+                    <p className="text-center text-muted-foreground">No hay firmas digitales registradas</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

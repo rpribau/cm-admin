@@ -20,9 +20,6 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { AppSidebar } from "@/components/app-sidebar"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
-import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -32,13 +29,14 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { schema } from "@/components/data-table"
 import type { z } from "zod"
-import { useAuth } from "@/contexts/auth-provider"
+import { useAuth } from "@/contexts/auth-context"
+import { documentoCompletoApi } from "@/lib/api-service"
 
 export default function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = React.use(params)
   const { id } = resolvedParams
   const router = useRouter()
-  const { user, isAdmin, userType } = useAuth()
+  const { user, isAdmin, userType, isLoading: authLoading } = useAuth()
   const [isLoading, setIsLoading] = React.useState(true)
   const [isSaving, setIsSaving] = React.useState(false)
   const [item, setItem] = React.useState<z.infer<typeof schema> | null>(null)
@@ -64,6 +62,9 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   const checkPermissions = (document: z.infer<typeof schema>) => {
     if (!user || !userType) return false
 
+    // Si el usuario es superusuario, tiene acceso a todo
+    if (userType === "todos") return true
+
     // Si el tipo de documento no coincide con el tipo de usuario
     if (document.type.toLowerCase() !== userType.toLowerCase()) {
       setPermissionError(`No tienes permisos para ver documentos de tipo ${document.type}`)
@@ -76,37 +77,41 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   // Cargar datos del elemento
   React.useEffect(() => {
     const loadData = async () => {
+      // If auth is still loading, wait
+      if (authLoading) return
+
       setIsLoading(true)
       try {
-        // Obtener los datos del documento
-        const response = await fetch("/api/documents")
-        const allData = await response.json()
+        // Obtener los datos del documento desde la API
+        const documentId = Number.parseInt(id)
+        const documentoCompleto = await documentoCompletoApi.getById(documentId)
 
-        // Encontrar el elemento con el ID correspondiente
-        const foundItem = allData.find((item: any) => item.id === Number.parseInt(id))
-
-        if (foundItem) {
-          // Verificar permisos
-          const hasPermission = checkPermissions(foundItem)
-
-          if (hasPermission) {
-            setItem(foundItem)
-            setEditableFields({
-              header: foundItem.header,
-              description: foundItem.description || "",
-              notes: foundItem.notes || "",
-              status: foundItem.status,
-              reviewer: foundItem.reviewer,
-              limit_date: foundItem.limit_date,
-            })
-            setPermissionError(null)
-          } else {
-            // Si no tiene permisos, no establecer el item
-            setItem(null)
-          }
-        } else {
-          toast.error("Elemento no encontrado")
+        if (!documentoCompleto) {
+          toast.error("Documento no encontrado")
           router.push("/dashboard")
+          return
+        }
+
+        // Convertir al formato esperado por el frontend
+        const frontendDoc = documentoCompletoApi.mapToFrontendFormat(documentoCompleto)
+
+        // Verificar permisos
+        const hasPermission = checkPermissions(frontendDoc)
+
+        if (hasPermission) {
+          setItem(frontendDoc)
+          setEditableFields({
+            header: frontendDoc.header,
+            description: frontendDoc.description || "",
+            notes: frontendDoc.notes || "",
+            status: frontendDoc.status,
+            reviewer: frontendDoc.reviewer,
+            limit_date: frontendDoc.limit_date,
+          })
+          setPermissionError(null)
+        } else {
+          // Si no tiene permisos, no establecer el item
+          setItem(null)
         }
       } catch (error) {
         console.error("Error al cargar datos:", error)
@@ -117,7 +122,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
     }
 
     loadData()
-  }, [id, router, user, userType])
+  }, [id, router, user, userType, authLoading])
 
   // Manejar el guardado de cambios
   const handleSave = async () => {
@@ -136,14 +141,13 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
         limit_date: editableFields.limit_date,
       }
 
-      // En una implementación real, esto sería una llamada a la API para actualizar data.json
-      // Por ahora, solo actualizamos el estado local
+      // Enviar los cambios a la API
+      const apiDocument = documentoCompletoApi.mapToApiFormat(updatedItem)
+      await documentoCompletoApi.update(apiDocument)
+
       setItem(updatedItem)
       setIsEditing(false)
       toast.success("Cambios guardados correctamente")
-
-      // Nota: En un entorno real, aquí enviaríamos los cambios al servidor
-      // para actualizar data.json
     } catch (error) {
       console.error("Error al guardar cambios:", error)
       toast.error("Error al guardar los cambios")
@@ -153,47 +157,82 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
   }
 
   // Manejar la adición de un nuevo enlace
-  const handleAddLink = () => {
+  const handleAddLink = async () => {
     if (!item) return
     if (!newLink.title.trim() || !newLink.url.trim()) {
       toast.error("El título y la URL son obligatorios")
       return
     }
 
-    const updatedLinks = [
-      ...(item.links || []),
-      {
+    try {
+      // Crear un nuevo enlace temporal para la UI
+      const newLinkItem = {
         id: `new-${Date.now()}`,
         title: newLink.title,
         url: newLink.url,
-      },
-    ]
+      }
 
-    setItem({
-      ...item,
-      links: updatedLinks,
-    })
+      const updatedLinks = [...(item.links || []), newLinkItem]
 
-    setNewLink({ title: "", url: "" })
-    setShowNewLinkForm(false)
-    toast.success("Enlace añadido")
+      // Actualizar el estado local
+      const updatedItem = {
+        ...item,
+        links: updatedLinks,
+      }
+
+      setItem(updatedItem)
+      setNewLink({ title: "", url: "" })
+      setShowNewLinkForm(false)
+
+      // Crear el enlace en la API
+      await fetch("/api/documents", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedItem),
+      })
+
+      toast.success("Enlace añadido")
+    } catch (error) {
+      console.error("Error al añadir enlace:", error)
+      toast.error("Error al añadir el enlace")
+    }
   }
 
   // Manejar la eliminación de un enlace
-  const handleDeleteLink = (linkId: string) => {
+  const handleDeleteLink = async (linkId: string) => {
     if (!item || !item.links) return
 
-    const updatedLinks = item.links.filter((link) => link.id !== linkId)
-    setItem({
-      ...item,
-      links: updatedLinks,
-    })
+    try {
+      const updatedLinks = item.links.filter((link) => link.id !== linkId)
 
-    toast.success("Enlace eliminado")
+      // Actualizar el estado local
+      const updatedItem = {
+        ...item,
+        links: updatedLinks,
+      }
+
+      setItem(updatedItem)
+
+      // Actualizar en la API
+      await fetch("/api/documents", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedItem),
+      })
+
+      toast.success("Enlace eliminado")
+    } catch (error) {
+      console.error("Error al eliminar enlace:", error)
+      toast.error("Error al eliminar el enlace")
+    }
   }
 
   // Manejar cambios en el estado de autorización
-  const handleAuthStatusChange = (index: number, status: "approved" | "rejected" | "pending") => {
+  const handleAuthStatusChange = async (index: number, status: "approved" | "rejected" | "pending") => {
     if (!item || !item.authorizations) return
 
     // Verificar si el usuario tiene permisos de administrador
@@ -202,21 +241,38 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
       return
     }
 
-    const updatedAuths = [...item.authorizations]
-    updatedAuths[index] = {
-      ...updatedAuths[index],
-      status,
-      date: status !== "pending" ? new Date().toISOString().split("T")[0] : "",
+    try {
+      const updatedAuths = [...item.authorizations]
+      updatedAuths[index] = {
+        ...updatedAuths[index],
+        status,
+        date: status !== "pending" ? new Date().toISOString().split("T")[0] : "",
+      }
+
+      // Actualizar el estado local
+      const updatedItem = {
+        ...item,
+        authorizations: updatedAuths,
+      }
+
+      setItem(updatedItem)
+
+      // Actualizar en la API
+      await fetch("/api/documents", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedItem),
+      })
+
+      toast.success(
+        `Autorización ${status === "approved" ? "aprobada" : status === "rejected" ? "rechazada" : "pendiente"}`,
+      )
+    } catch (error) {
+      console.error("Error al actualizar autorización:", error)
+      toast.error("Error al actualizar la autorización")
     }
-
-    setItem({
-      ...item,
-      authorizations: updatedAuths,
-    })
-
-    toast.success(
-      `Autorización ${status === "approved" ? "aprobada" : status === "rejected" ? "rechazada" : "pendiente"}`,
-    )
   }
 
   // Renderizar el estado con el icono correspondiente
@@ -302,399 +358,381 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
     }
   }
 
-  if (isLoading) {
+  if (isLoading || authLoading) {
     return (
-      <SidebarProvider>
-        <AppSidebar variant="inset" />
-        <SidebarInset>
-          <SiteHeader />
-          <div className="flex min-h-screen flex-col">
-            <div className="flex flex-1 items-center justify-center">
-              <div className="flex flex-col items-center gap-2">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">Cargando documento...</p>
-              </div>
-            </div>
+      <div className="flex min-h-screen flex-col">
+        <div className="flex flex-1 items-center justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Cargando documento...</p>
           </div>
-        </SidebarInset>
-      </SidebarProvider>
+        </div>
+      </div>
     )
   }
 
   if (!item || permissionError) {
     return (
-      <SidebarProvider>
-        <AppSidebar variant="inset" />
-        <SidebarInset>
-          <SiteHeader />
-          <div className="flex min-h-screen flex-col">
-            <div className="flex flex-1 items-center justify-center p-4">
-              <Card className="w-full max-w-md">
-                <CardContent className="flex flex-col items-center justify-center p-6">
-                  <ShieldAlertIcon className="mb-2 h-10 w-10 text-destructive" />
-                  <h3 className="mb-2 text-lg font-medium">Acceso denegado</h3>
-                  <p className="text-center text-sm text-muted-foreground">
-                    {permissionError || "No tienes permisos para ver este documento."}
-                  </p>
-                  <Button className="mt-4" onClick={() => router.push("/dashboard")}>
-                    Volver al dashboard
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+      <div className="flex min-h-screen flex-col">
+        <div className="flex flex-1 items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="flex flex-col items-center justify-center p-6">
+              <ShieldAlertIcon className="mb-2 h-10 w-10 text-destructive" />
+              <h3 className="mb-2 text-lg font-medium">Acceso denegado</h3>
+              <p className="text-center text-sm text-muted-foreground">
+                {permissionError || "No tienes permisos para ver este documento."}
+              </p>
+              <Button className="mt-4" onClick={() => router.push("/dashboard")}>
+                Volver al dashboard
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     )
   }
 
   return (
-    <SidebarProvider>
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader />
-        <div className="flex flex-1 flex-col">
-          <div className="container mx-auto max-w-5xl py-6">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold">
-                  {isEditing ? (
-                    <Input
-                      value={editableFields.header}
-                      onChange={(e) => setEditableFields({ ...editableFields, header: e.target.value })}
-                      className="max-w-md text-2xl font-bold"
-                    />
+    <div className="flex flex-1 flex-col">
+      <div className="container mx-auto max-w-5xl py-6">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">
+              {isEditing ? (
+                <Input
+                  value={editableFields.header}
+                  onChange={(e) => setEditableFields({ ...editableFields, header: e.target.value })}
+                  className="max-w-md text-2xl font-bold"
+                />
+              ) : (
+                item.header
+              )}
+            </h1>
+            <div className="mt-1 flex items-center gap-3">
+              <Badge variant="outline" className="px-1.5 text-muted-foreground">
+                {item.type}
+              </Badge>
+              {isEditing ? (
+                <Select
+                  value={editableFields.status}
+                  onValueChange={(value) => setEditableFields({ ...editableFields, status: value })}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Estado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="No Iniciado">No Iniciado</SelectItem>
+                    <SelectItem value="En Proceso">En Proceso</SelectItem>
+                    <SelectItem value="Completado">Completado</SelectItem>
+                    <SelectItem value="Rechazado">Rechazado</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                renderStatus(item.status)
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {isEditing ? (
+              <>
+                <Button onClick={handleSave} disabled={isSaving}>
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Guardando...
+                    </>
                   ) : (
-                    item.header
+                    <>
+                      <SaveIcon className="mr-2 h-4 w-4" />
+                      Guardar
+                    </>
                   )}
-                </h1>
-                <div className="mt-1 flex items-center gap-3">
-                  <Badge variant="outline" className="px-1.5 text-muted-foreground">
-                    {item.type}
-                  </Badge>
-                  {isEditing ? (
-                    <Select
-                      value={editableFields.status}
-                      onValueChange={(value) => setEditableFields({ ...editableFields, status: value })}
-                    >
-                      <SelectTrigger className="w-40">
-                        <SelectValue placeholder="Estado" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="No Iniciado">No Iniciado</SelectItem>
-                        <SelectItem value="En Proceso">En Proceso</SelectItem>
-                        <SelectItem value="Completado">Completado</SelectItem>
-                        <SelectItem value="Rechazado">Rechazado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    renderStatus(item.status)
+                </Button>
+                <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isSaving}>
+                  Cancelar
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={() => router.push("/dashboard")} variant="outline" className="mr-2">
+                  Volver al Dashboard
+                </Button>
+                <Button onClick={() => setIsEditing(true)}>
+                  <PencilIcon className="mr-2 h-4 w-4" />
+                  Editar
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="mb-4 grid w-full grid-cols-3 lg:w-auto">
+            <TabsTrigger value="general">Información General</TabsTrigger>
+            <TabsTrigger value="links">Enlaces ({item.links?.length || 0})</TabsTrigger>
+            <TabsTrigger value="authorizations">Autorizaciones</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="general" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Detalles del Documento</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <Label>ID</Label>
+                    <div className="mt-1 rounded-md border p-2">{item.id}</div>
+                  </div>
+                  <div>
+                    <Label>Tipo</Label>
+                    <div className="mt-1 rounded-md border p-2">{item.type}</div>
+                  </div>
+                  <div>
+                    <Label>Fecha Límite</Label>
+                    {isEditing ? (
+                      <Input
+                        type="date"
+                        value={editableFields.limit_date}
+                        onChange={(e) => setEditableFields({ ...editableFields, limit_date: e.target.value })}
+                        className="mt-1"
+                      />
+                    ) : (
+                      <div className="mt-1 flex items-center gap-2 rounded-md border p-2">
+                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                        {item.limit_date}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <Label>Revisor</Label>
+                    {isEditing ? (
+                      <Select
+                        value={editableFields.reviewer}
+                        onValueChange={(value) => setEditableFields({ ...editableFields, reviewer: value })}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Seleccionar revisor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Asignar revisor">Asignar revisor</SelectItem>
+                          <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
+                          <SelectItem value="Jamik Tashpulatov">Jamik Tashpulatov</SelectItem>
+                          <SelectItem value="Carlos Méndez">Carlos Méndez</SelectItem>
+                          <SelectItem value="María García">María García</SelectItem>
+                          <SelectItem value="Laura Sánchez">Laura Sánchez</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="mt-1 rounded-md border p-2">{item.reviewer}</div>
+                    )}
+                  </div>
+                  {item.target && (
+                    <div>
+                      <Label>Objetivo</Label>
+                      <div className="mt-1 rounded-md border p-2">{item.target}</div>
+                    </div>
+                  )}
+                  {item.limit && (
+                    <div>
+                      <Label>Límite</Label>
+                      <div className="mt-1 rounded-md border p-2">{item.limit}</div>
+                    </div>
                   )}
                 </div>
-              </div>
-              <div className="flex gap-2">
-                {isEditing ? (
-                  <>
-                    <Button onClick={handleSave} disabled={isSaving}>
-                      {isSaving ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Guardando...
-                        </>
-                      ) : (
-                        <>
-                          <SaveIcon className="mr-2 h-4 w-4" />
-                          Guardar
-                        </>
-                      )}
-                    </Button>
-                    <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isSaving}>
-                      Cancelar
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button onClick={() => router.push("/dashboard")} variant="outline" className="mr-2">
-                      Volver al Dashboard
-                    </Button>
-                    <Button onClick={() => setIsEditing(true)}>
-                      <PencilIcon className="mr-2 h-4 w-4" />
-                      Editar
-                    </Button>
-                  </>
+
+                <Separator />
+
+                <div>
+                  <Label>Descripción</Label>
+                  {isEditing ? (
+                    <Textarea
+                      value={editableFields.description}
+                      onChange={(e) => setEditableFields({ ...editableFields, description: e.target.value })}
+                      className="mt-1 min-h-[100px]"
+                      placeholder="Añade una descripción del documento..."
+                    />
+                  ) : (
+                    <div className="mt-1 min-h-[50px] rounded-md border p-2">
+                      {item.description || <span className="text-muted-foreground">Sin descripción</span>}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Label>Notas</Label>
+                  {isEditing ? (
+                    <Textarea
+                      value={editableFields.notes}
+                      onChange={(e) => setEditableFields({ ...editableFields, notes: e.target.value })}
+                      className="mt-1 min-h-[100px]"
+                      placeholder="Añade notas adicionales..."
+                    />
+                  ) : (
+                    <div className="mt-1 min-h-[50px] rounded-md border p-2">
+                      {item.notes || <span className="text-muted-foreground">Sin notas</span>}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="links" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Enlaces a Documentos</CardTitle>
+                {isEditing && (
+                  <Button variant="outline" size="sm" onClick={() => setShowNewLinkForm(!showNewLinkForm)}>
+                    {showNewLinkForm ? "Cancelar" : "Añadir Enlace"}
+                  </Button>
                 )}
-              </div>
-            </div>
+              </CardHeader>
+              <CardContent>
+                {showNewLinkForm && isEditing && (
+                  <div className="mb-4 space-y-3 rounded-md border p-3">
+                    <div>
+                      <Label htmlFor="link-title">Título del documento</Label>
+                      <Input
+                        id="link-title"
+                        placeholder="Informe mensual, Presupuesto, etc."
+                        value={newLink.title}
+                        onChange={(e) => setNewLink({ ...newLink, title: e.target.value })}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="link-url">URL del documento</Label>
+                      <Input
+                        id="link-url"
+                        placeholder="https://organizacion-my.sharepoint.com/..."
+                        value={newLink.url}
+                        onChange={(e) => setNewLink({ ...newLink, url: e.target.value })}
+                        className="mt-1"
+                      />
+                    </div>
+                    <Button onClick={handleAddLink} className="w-full">
+                      Añadir Enlace
+                    </Button>
+                  </div>
+                )}
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="mb-4 grid w-full grid-cols-3 lg:w-auto">
-                <TabsTrigger value="general">Información General</TabsTrigger>
-                <TabsTrigger value="links">Enlaces ({item.links?.length || 0})</TabsTrigger>
-                <TabsTrigger value="authorizations">Autorizaciones</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="general" className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Detalles del Documento</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div>
-                        <Label>ID</Label>
-                        <div className="mt-1 rounded-md border p-2">{item.id}</div>
-                      </div>
-                      <div>
-                        <Label>Tipo</Label>
-                        <div className="mt-1 rounded-md border p-2">{item.type}</div>
-                      </div>
-                      <div>
-                        <Label>Fecha Límite</Label>
-                        {isEditing ? (
-                          <Input
-                            type="date"
-                            value={editableFields.limit_date}
-                            onChange={(e) => setEditableFields({ ...editableFields, limit_date: e.target.value })}
-                            className="mt-1"
-                          />
-                        ) : (
-                          <div className="mt-1 flex items-center gap-2 rounded-md border p-2">
-                            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                            {item.limit_date}
+                {item.links && item.links.length > 0 ? (
+                  <div className="space-y-3">
+                    {item.links.map((link) => (
+                      <div key={link.id} className="flex items-center justify-between rounded-md border p-3">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <LinkIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">{link.title}</p>
+                            <p className="truncate text-xs text-muted-foreground">{link.url}</p>
                           </div>
-                        )}
-                      </div>
-                      <div>
-                        <Label>Revisor</Label>
-                        {isEditing ? (
-                          <Select
-                            value={editableFields.reviewer}
-                            onValueChange={(value) => setEditableFields({ ...editableFields, reviewer: value })}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => window.open(link.url, "_blank")}
                           >
-                            <SelectTrigger className="mt-1">
-                              <SelectValue placeholder="Seleccionar revisor" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Asignar revisor">Asignar revisor</SelectItem>
-                              <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
-                              <SelectItem value="Jamik Tashpulatov">Jamik Tashpulatov</SelectItem>
-                              <SelectItem value="Carlos Méndez">Carlos Méndez</SelectItem>
-                              <SelectItem value="María García">María García</SelectItem>
-                              <SelectItem value="Laura Sánchez">Laura Sánchez</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <div className="mt-1 rounded-md border p-2">{item.reviewer}</div>
-                        )}
+                            <ExternalLinkIcon className="h-4 w-4" />
+                            <span className="sr-only">Abrir enlace</span>
+                          </Button>
+                          {isEditing && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => handleDeleteLink(link.id)}
+                            >
+                              <Trash2Icon className="h-4 w-4" />
+                              <span className="sr-only">Eliminar enlace</span>
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                      {item.target && (
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-32 items-center justify-center rounded-md border border-dashed">
+                    <p className="text-center text-muted-foreground">No hay enlaces asociados a este documento</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="authorizations" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Autorizaciones y Firmas</CardTitle>
+                {!isAdmin && (
+                  <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
+                    Solo administradores pueden modificar
+                  </Badge>
+                )}
+              </CardHeader>
+              <CardContent>
+                {item.authorizations && item.authorizations.length > 0 ? (
+                  <div className="space-y-4">
+                    {item.authorizations.map((auth, index) => (
+                      <div
+                        key={index}
+                        className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+                      >
                         <div>
-                          <Label>Objetivo</Label>
-                          <div className="mt-1 rounded-md border p-2">{item.target}</div>
+                          <p className="font-medium">{auth.name}</p>
+                          <p className="text-sm text-muted-foreground">{auth.role}</p>
                         </div>
-                      )}
-                      {item.limit && (
-                        <div>
-                          <Label>Límite</Label>
-                          <div className="mt-1 rounded-md border p-2">{item.limit}</div>
-                        </div>
-                      )}
-                    </div>
-
-                    <Separator />
-
-                    <div>
-                      <Label>Descripción</Label>
-                      {isEditing ? (
-                        <Textarea
-                          value={editableFields.description}
-                          onChange={(e) => setEditableFields({ ...editableFields, description: e.target.value })}
-                          className="mt-1 min-h-[100px]"
-                          placeholder="Añade una descripción del documento..."
-                        />
-                      ) : (
-                        <div className="mt-1 rounded-md border p-2 min-h-[50px]">
-                          {item.description || <span className="text-muted-foreground">Sin descripción</span>}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <Label>Notas</Label>
-                      {isEditing ? (
-                        <Textarea
-                          value={editableFields.notes}
-                          onChange={(e) => setEditableFields({ ...editableFields, notes: e.target.value })}
-                          className="mt-1 min-h-[100px]"
-                          placeholder="Añade notas adicionales..."
-                        />
-                      ) : (
-                        <div className="mt-1 rounded-md border p-2 min-h-[50px]">
-                          {item.notes || <span className="text-muted-foreground">Sin notas</span>}
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="links" className="space-y-4">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle>Enlaces a Documentos</CardTitle>
-                    {isEditing && (
-                      <Button variant="outline" size="sm" onClick={() => setShowNewLinkForm(!showNewLinkForm)}>
-                        {showNewLinkForm ? "Cancelar" : "Añadir Enlace"}
-                      </Button>
-                    )}
-                  </CardHeader>
-                  <CardContent>
-                    {showNewLinkForm && isEditing && (
-                      <div className="mb-4 space-y-3 rounded-md border p-3">
-                        <div>
-                          <Label htmlFor="link-title">Título del documento</Label>
-                          <Input
-                            id="link-title"
-                            placeholder="Informe mensual, Presupuesto, etc."
-                            value={newLink.title}
-                            onChange={(e) => setNewLink({ ...newLink, title: e.target.value })}
-                            className="mt-1"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="link-url">URL del documento</Label>
-                          <Input
-                            id="link-url"
-                            placeholder="https://organizacion-my.sharepoint.com/..."
-                            value={newLink.url}
-                            onChange={(e) => setNewLink({ ...newLink, url: e.target.value })}
-                            className="mt-1"
-                          />
-                        </div>
-                        <Button onClick={handleAddLink} className="w-full">
-                          Añadir Enlace
-                        </Button>
-                      </div>
-                    )}
-
-                    {item.links && item.links.length > 0 ? (
-                      <div className="space-y-3">
-                        {item.links.map((link) => (
-                          <div key={link.id} className="flex items-center justify-between rounded-md border p-3">
-                            <div className="flex items-center gap-2 overflow-hidden">
-                              <LinkIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate font-medium">{link.title}</p>
-                                <p className="truncate text-xs text-muted-foreground">{link.url}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+                          {isAdmin && isEditing ? (
+                            <div className="flex gap-2">
                               <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => window.open(link.url, "_blank")}
+                                variant={auth.status === "approved" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handleAuthStatusChange(index, "approved")}
                               >
-                                <ExternalLinkIcon className="h-4 w-4" />
-                                <span className="sr-only">Abrir enlace</span>
+                                <CheckCircle2Icon className="mr-1 h-4 w-4" />
+                                Aprobar
                               </Button>
-                              {isEditing && (
+                              <Button
+                                variant={auth.status === "rejected" ? "destructive" : "outline"}
+                                size="sm"
+                                onClick={() => handleAuthStatusChange(index, "rejected")}
+                              >
+                                <XCircleIcon className="mr-1 h-4 w-4" />
+                                Rechazar
+                              </Button>
+                              {auth.status !== "pending" && (
                                 <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-destructive"
-                                  onClick={() => handleDeleteLink(link.id)}
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleAuthStatusChange(index, "pending")}
                                 >
-                                  <Trash2Icon className="h-4 w-4" />
-                                  <span className="sr-only">Eliminar enlace</span>
+                                  <ClockIcon className="mr-1 h-4 w-4" />
+                                  Pendiente
                                 </Button>
                               )}
                             </div>
-                          </div>
-                        ))}
+                          ) : (
+                            renderAuthStatus(auth.status, auth.date)
+                          )}
+                        </div>
                       </div>
-                    ) : (
-                      <div className="flex h-32 items-center justify-center rounded-md border border-dashed">
-                        <p className="text-center text-muted-foreground">No hay enlaces asociados a este documento</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="authorizations" className="space-y-4">
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle>Autorizaciones y Firmas</CardTitle>
-                    {!isAdmin && (
-                      <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
-                        Solo administradores pueden modificar
-                      </Badge>
-                    )}
-                  </CardHeader>
-                  <CardContent>
-                    {item.authorizations && item.authorizations.length > 0 ? (
-                      <div className="space-y-4">
-                        {item.authorizations.map((auth, index) => (
-                          <div
-                            key={index}
-                            className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-                          >
-                            <div>
-                              <p className="font-medium">{auth.name}</p>
-                              <p className="text-sm text-muted-foreground">{auth.role}</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {isAdmin && isEditing ? (
-                                <div className="flex gap-2">
-                                  <Button
-                                    variant={auth.status === "approved" ? "default" : "outline"}
-                                    size="sm"
-                                    onClick={() => handleAuthStatusChange(index, "approved")}
-                                  >
-                                    <CheckCircle2Icon className="mr-1 h-4 w-4" />
-                                    Aprobar
-                                  </Button>
-                                  <Button
-                                    variant={auth.status === "rejected" ? "destructive" : "outline"}
-                                    size="sm"
-                                    onClick={() => handleAuthStatusChange(index, "rejected")}
-                                  >
-                                    <XCircleIcon className="mr-1 h-4 w-4" />
-                                    Rechazar
-                                  </Button>
-                                  {auth.status !== "pending" && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleAuthStatusChange(index, "pending")}
-                                    >
-                                      <ClockIcon className="mr-1 h-4 w-4" />
-                                      Pendiente
-                                    </Button>
-                                  )}
-                                </div>
-                              ) : (
-                                renderAuthStatus(auth.status, auth.date)
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex h-32 items-center justify-center rounded-md border border-dashed">
-                        <p className="text-center text-muted-foreground">
-                          No hay autorizaciones registradas para este documento
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-32 items-center justify-center rounded-md border border-dashed">
+                    <p className="text-center text-muted-foreground">
+                      No hay autorizaciones registradas para este documento
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
   )
 }

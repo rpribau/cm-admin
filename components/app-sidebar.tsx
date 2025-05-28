@@ -130,7 +130,7 @@ const data = {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { isSuperuser } = useAuth()
+  const { isSuperuser, isAdmin } = useAuth()
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -150,21 +150,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain items={data.navMain} />
         <NavDocuments items={data.documents} />
 
+        {/* Opciones para administradores y superusuarios */}
+        
+
         {/* Opción "Crear firmas" solo visible para superusuarios */}
         {isSuperuser && (
-          <>
-            <SidebarSeparator />
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="/dashboard/firmas">
-                    <PenToolIcon className="h-4 w-4" />
-                    <span>Crear firmas</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild>
+                <a href="/dashboard/firmas">
+                  <PenToolIcon className="h-4 w-4" />
+                  <span>Crear firmas</span>
+                </a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         )}
 
         <NavSecondary items={data.navSecondary} className="mt-auto" />
