@@ -15,8 +15,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SheetClose, SheetFooter } from "@/components/ui/sheet"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { useAuth } from "@/contexts/auth-provider"
-import { documentoCompletoApi } from "@/lib/api-service"
+import { useAuth } from "@/contexts/auth-context"
+import { accountDetailsApi, documentoCompletoApi, type AccountDetailsResponse } from "@/lib/api-service"
+import { Textarea } from "@/components/ui/textarea"
 
 // Esquema para validación
 const sectionSchema = z.object({
@@ -26,6 +27,7 @@ const sectionSchema = z.object({
   type: z.string(),
   limit_date: z.string(),
   reviewer: z.string(),
+  description: z.string().optional(),
   links: z
     .array(
       z.object({
@@ -51,74 +53,81 @@ interface AddSectionFormProps {
 }
 
 export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
-  const { user, userType } = useAuth()
+  const { userType } = useAuth()
   const [formData, setFormData] = React.useState<FormData>({
     header: "",
     type: userType ? userType.charAt(0).toUpperCase() + userType.slice(1) : "Humanitario",
     limit_date: new Date().toISOString().split("T")[0],
     reviewer: "Asignar revisor",
+    description: "",
     links: [],
   })
   const [loading, setLoading] = React.useState(false)
   const [date, setDate] = React.useState<Date | undefined>(new Date())
 
-  // Estado para el nuevo enlace que se está agregando
   const [newLink, setNewLink] = React.useState<Omit<LinkItem, "id">>({
     title: "",
     url: "",
   })
-
-  // Estado para controlar errores de validación
   const [linkErrors, setLinkErrors] = React.useState({
     title: false,
     url: false,
   })
+
+  const [reviewers, setReviewers] = React.useState<AccountDetailsResponse[]>([])
+  const [loadingReviewers, setLoadingReviewers] = React.useState(true)
+
+  React.useEffect(() => {
+    const fetchReviewers = async () => {
+      setLoadingReviewers(true)
+      try {
+        const allUsers = await accountDetailsApi.getAll()
+        const potentialReviewers = allUsers.filter(
+          (acc) => acc.authorizacion === true && acc.type.toLowerCase() === formData.type.toLowerCase(),
+        )
+        setReviewers(potentialReviewers)
+
+        if (formData.reviewer !== "Asignar revisor" && !potentialReviewers.find((r) => r.name === formData.reviewer)) {
+          setFormData((prev) => ({ ...prev, reviewer: "Asignar revisor" }))
+        }
+      } catch (error) {
+        console.error("Error fetching reviewers:", error)
+        toast.error("Error al cargar la lista de revisores.")
+        setReviewers([])
+      } finally {
+        setLoadingReviewers(false)
+      }
+    }
+
+    if (formData.type) {
+      fetchReviewers()
+    }
+  }, [formData.type]) // Re-fetch/filter when document type changes
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
 
     try {
-      // Actualizar la fecha límite con el valor del calendario
       const updatedFormData = {
         ...formData,
         limit_date: date ? date.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
       }
 
-      // Convertir al formato de la API
       const apiDocument = documentoCompletoApi.mapToApiFormat({
         id: null,
         ...updatedFormData,
         status: "No Iniciado",
-        description: "",
+        // description is already in updatedFormData
         authorizations: [
-          {
-            name: "Carlos Méndez",
-            role: "Director de Proyecto",
-            status: "pending",
-            date: "",
-          },
-          {
-            name: "María García",
-            role: "Gerente de Calidad",
-            status: "pending",
-            date: "",
-          },
-          {
-            name: "Laura Sánchez",
-            role: "Directora Financiera",
-            status: "pending",
-            date: "",
-          },
+          { name: "Carlos Méndez", role: "Director de Proyecto", status: "pending", date: "" },
+          { name: "María García", role: "Gerente de Calidad", status: "pending", date: "" },
+          { name: "Laura Sánchez", role: "Directora Financiera", status: "pending", date: "" },
         ],
       })
 
-      // Crear el documento a través de la API
       await documentoCompletoApi.create(apiDocument)
-
-      // Llamar al callback con los datos del formulario
       onAddSection(updatedFormData)
-
       toast.success("Sección añadida correctamente")
     } catch (error) {
       console.error("Error al crear documento:", error)
@@ -128,54 +137,22 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
     }
   }
 
-  // Función para agregar un nuevo enlace
   const addLink = () => {
-    // Validar que el título y la URL no estén vacíos
     const titleError = newLink.title.trim() === ""
     const urlError = newLink.url.trim() === "" || !isValidUrl(newLink.url)
-
-    setLinkErrors({
-      title: titleError,
-      url: urlError,
-    })
-
+    setLinkErrors({ title: titleError, url: urlError })
     if (titleError || urlError) return
 
-    // Crear un nuevo enlace con un ID único
-    const link: LinkItem = {
-      id: crypto.randomUUID(),
-      title: newLink.title,
-      url: newLink.url,
-    }
-
-    // Actualizar el estado del formulario
-    setFormData({
-      ...formData,
-      links: [...(formData.links || []), link],
-    })
-
-    // Limpiar el formulario de nuevo enlace
-    setNewLink({
-      title: "",
-      url: "",
-    })
-
-    // Limpiar errores
-    setLinkErrors({
-      title: false,
-      url: false,
-    })
+    const link: LinkItem = { id: crypto.randomUUID(), title: newLink.title, url: newLink.url }
+    setFormData({ ...formData, links: [...(formData.links || []), link] })
+    setNewLink({ title: "", url: "" })
+    setLinkErrors({ title: false, url: false })
   }
 
-  // Función para eliminar un enlace
   const removeLink = (id: string) => {
-    setFormData({
-      ...formData,
-      links: formData.links?.filter((link) => link.id !== id) || [],
-    })
+    setFormData({ ...formData, links: formData.links?.filter((link) => link.id !== id) || [] })
   }
 
-  // Función para validar URL
   const isValidUrl = (url: string) => {
     try {
       new URL(url)
@@ -203,16 +180,20 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
         <Label htmlFor="type" className="flex items-center">
           Tipo <span className="ml-1 text-red-500">*</span>
         </Label>
-        <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value })} required>
+        <Select
+          value={formData.type}
+          onValueChange={(value) => setFormData({ ...formData, type: value, reviewer: "Asignar revisor" })} // Reset reviewer on type change
+          required
+        >
           <SelectTrigger id="type">
             <SelectValue placeholder="Seleccionar tipo" />
           </SelectTrigger>
           <SelectContent>
-            {(!userType || userType === "humanitario") && <SelectItem value="Humanitario">Humanitario</SelectItem>}
-            {(!userType || userType === "psicosocial") && <SelectItem value="Psicosocial">Psicosocial</SelectItem>}
-            {(!userType || userType === "legal") && <SelectItem value="Legal">Legal</SelectItem>}
-            {(!userType || userType === "comunicacion") && <SelectItem value="Comunicación">Comunicación</SelectItem>}
-            {(!userType || userType === "almacen") && <SelectItem value="Almacén">Almacén</SelectItem>}
+            <SelectItem value="Humanitario">Humanitario</SelectItem>
+            <SelectItem value="Psicosocial">Psicosocial</SelectItem>
+            <SelectItem value="Legal">Legal</SelectItem>
+            <SelectItem value="Comunicación">Comunicación</SelectItem>
+            <SelectItem value="Almacén">Almacén</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -236,22 +217,46 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
 
       <div className="flex flex-col gap-3">
         <Label htmlFor="reviewer">Revisor</Label>
-        <Select value={formData.reviewer} onValueChange={(value) => setFormData({ ...formData, reviewer: value })}>
+        <Select
+          value={formData.reviewer}
+          onValueChange={(value) => setFormData({ ...formData, reviewer: value })}
+          disabled={loadingReviewers}
+        >
           <SelectTrigger id="reviewer">
             <SelectValue placeholder="Asignar revisor" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="Asignar revisor">Asignar revisor</SelectItem>
-            <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
-            <SelectItem value="Jamik Tashpulatov">Jamik Tashpulatov</SelectItem>
-            <SelectItem value="Carlos Méndez">Carlos Méndez</SelectItem>
-            <SelectItem value="María García">María García</SelectItem>
-            <SelectItem value="Laura Sánchez">Laura Sánchez</SelectItem>
+            {loadingReviewers ? (
+              <SelectItem value="loading" disabled>
+                Cargando revisores...
+              </SelectItem>
+            ) : reviewers.length === 0 ? (
+              <SelectItem value="no-reviewers" disabled>
+                No hay revisores para este tipo
+              </SelectItem>
+            ) : (
+              reviewers.map((rev) => (
+                <SelectItem key={rev.id} value={rev.name}>
+                  {rev.name} ({rev.email})
+                </SelectItem>
+              ))
+            )}
           </SelectContent>
         </Select>
       </div>
 
-      {/* Nueva sección para enlaces a SharePoint/OneDrive */}
+      <div className="flex flex-col gap-3">
+        <Label htmlFor="description">Descripción</Label>
+        <Textarea
+          id="description"
+          placeholder="Añade una descripción detallada del documento..."
+          value={formData.description || ""}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          className="min-h-[100px]"
+        />
+      </div>
+
       <Separator className="my-2" />
 
       <div className="flex flex-col gap-3">
@@ -260,7 +265,6 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
           Añade enlaces a documentos almacenados en SharePoint o OneDrive.
         </p>
 
-        {/* Lista de enlaces existentes */}
         {formData.links && formData.links.length > 0 && (
           <Card className="mb-3">
             <CardContent className="p-3">
@@ -303,7 +307,6 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
           </Card>
         )}
 
-        {/* Formulario para agregar nuevo enlace */}
         <div className="flex flex-col gap-3 rounded-md border p-3">
           <div className="flex flex-col gap-2">
             <Label htmlFor="link-title" className={linkErrors.title ? "text-destructive" : ""}>

@@ -1,96 +1,101 @@
 import { cookies } from "next/headers"
 import { type NextRequest, NextResponse } from "next/server"
 import type { UserRole } from "@/contexts/auth-context"
+import { accountDetailsApi, type AccountDetailsResponse } from "@/lib/api-service"
 
-// Credenciales de prueba para diferentes tipos de usuarios
-const TEST_USERS = [
-  {
-    email: "humanitario@email.com",
-    password: "password",
-    name: "Usuario Humanitario",
-    role: "humanitario" as UserRole,
-  },
-  {
-    email: "psicosocial@email.com",
-    password: "password",
-    name: "Usuario Psicosocial",
-    role: "psicosocial" as UserRole,
-  },
-  {
-    email: "legal@email.com",
-    password: "password",
-    name: "Usuario Legal",
-    role: "legal" as UserRole,
-  },
-  {
-    email: "comunicacion@email.com",
-    password: "password",
-    name: "Usuario Comunicación",
-    role: "comunicacion" as UserRole,
-  },
-  {
-    email: "almacen@email.com",
-    password: "password",
-    name: "Usuario Almacén",
-    role: "almacen" as UserRole,
-  },
-  {
-    email: "admin-humanitario@email.com",
-    password: "password",
-    name: "Admin Humanitario",
-    role: "admin-humanitario" as UserRole,
-  },
-  {
-    email: "admin-psicosocial@email.com",
-    password: "password",
-    name: "Admin Psicosocial",
-    role: "admin-psicosocial" as UserRole,
-  },
-  {
-    email: "admin-legal@email.com",
-    password: "password",
-    name: "Admin Legal",
-    role: "admin-legal" as UserRole,
-  },
-  {
-    email: "admin-comunicacion@email.com",
-    password: "password",
-    name: "Admin Comunicación",
-    role: "admin-comunicacion" as UserRole,
-  },
-  {
-    email: "admin-almacen@email.com",
-    password: "password",
-    name: "Admin Almacén",
-    role: "admin-almacen" as UserRole,
-  },
-  // Añadir superusuario
-  {
-    email: "superuser@email.com",
-    password: "password",
-    name: "Super Usuario",
-    role: "superuser" as UserRole,
-  },
-]
+// Superuser credentials (kept as per requirement)
+const SUPERUSER_EMAIL = "superuser@email.com"
+const SUPERUSER_PASSWORD = "password"
+const SUPERUSER_NAME = "Super Usuario"
+const SUPERUSER_ROLE: UserRole = "superuser"
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { email, password } = body
 
-    // Buscar el usuario por email y contraseña
-    const user = TEST_USERS.find(
-      (user) => user.email.toLowerCase() === email.toLowerCase() && user.password === password,
-    )
+    let authenticatedUser: {
+      id: string | number
+      name: string
+      email: string
+      role: UserRole
+    } | null = null
 
-    if (!user) {
+    // 1. Check for Superuser
+    if (email.toLowerCase() === SUPERUSER_EMAIL) {
+      if (password === SUPERUSER_PASSWORD) {
+        authenticatedUser = {
+          id: `user-superuser-${Date.now()}`,
+          name: SUPERUSER_NAME,
+          email: SUPERUSER_EMAIL,
+          role: SUPERUSER_ROLE,
+        }
+      }
+    } else {
+      // 2. Authenticate against /account_details endpoint for other users
+      try {
+        const allAccounts = await accountDetailsApi.getAll()
+        const apiUser = allAccounts.find(
+          (acc: AccountDetailsResponse) => acc.email.toLowerCase() === email.toLowerCase() && acc.password === password,
+        )
+
+        if (apiUser) {
+          let role: UserRole
+          const apiUserType = apiUser.type.toLowerCase() as UserRole // Assuming type matches a base role
+
+          if (apiUser.authorizacion) {
+            // Construct admin role, e.g., "admin-humanitario"
+            role = `admin-${apiUserType}` as UserRole
+          } else {
+            role = apiUserType
+          }
+
+          // Validate if the constructed role is a valid UserRole
+          // This is a basic check; more robust validation might be needed if types are very dynamic
+          const validRoles: UserRole[] = [
+            "humanitario",
+            "psicosocial",
+            "legal",
+            "comunicacion",
+            "almacen",
+            "admin-humanitario",
+            "admin-psicosocial",
+            "admin-legal",
+            "admin-comunicacion",
+            "admin-almacen",
+            "superuser",
+          ]
+
+          if (!validRoles.includes(role)) {
+            console.warn(`Invalid role constructed for user ${apiUser.email}: ${role}. Defaulting to base type.`)
+            role = apiUserType // Fallback to base type if admin variant is not standard
+          }
+
+          authenticatedUser = {
+            id: apiUser.id, // Use ID from API
+            name: apiUser.name, // Use name from API
+            email: apiUser.email,
+            role: role,
+          }
+        }
+      } catch (apiError) {
+        console.error("API error during authentication:", apiError)
+        // If API is down or there's an error, non-superusers can't log in
+        return NextResponse.json(
+          { success: false, message: "Error de autenticación. Intente más tarde." },
+          { status: 500 },
+        )
+      }
+    }
+
+    if (!authenticatedUser) {
       return NextResponse.json({ success: false, message: "Credenciales inválidas" }, { status: 401 })
     }
 
-    // Generar un token simulado (en una implementación real, usaríamos JWT)
-    const token = `token-${user.role}-${Date.now()}`
+    // Generate a simulated token
+    const token = `token-${authenticatedUser.role}-${Date.now()}`
 
-    // Establecer cookie de sesión
+    // Set session cookies
     const cookieStore = await cookies()
     cookieStore.set({
       name: "auth-token",
@@ -98,28 +103,30 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       path: "/",
       secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7, // 1 semana
+      maxAge: 60 * 60 * 24 * 7, // 1 week
       sameSite: "strict",
     })
 
-    // Guardar el rol del usuario en otra cookie para poder acceder desde el cliente
     cookieStore.set({
       name: "user-role",
-      value: user.role,
+      value: authenticatedUser.role,
       path: "/",
       secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7, // 1 semana
+      maxAge: 60 * 60 * 24 * 7, // 1 week
       sameSite: "strict",
     })
 
-    // Devolver respuesta exitosa con datos del usuario
+    // It's good practice to also store user's name and email if they are frequently accessed by /api/auth/me
+    // to avoid reconstructing them, but for now, role is the most critical for /me.
+    // Storing more in cookies increases their size.
+
     return NextResponse.json({
       success: true,
       user: {
-        id: `user-${Date.now()}`,
-        name: user.name,
-        email: user.email,
-        role: user.role,
+        id: authenticatedUser.id.toString(), // Ensure ID is string
+        name: authenticatedUser.name,
+        email: authenticatedUser.email,
+        role: authenticatedUser.role,
       },
     })
   } catch (error) {

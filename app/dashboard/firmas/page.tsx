@@ -18,10 +18,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import {
   accountDetailsApi,
   accountAccessApi,
-  type accountDetailsApi,
-  type AccountDetailsResponse,
-  type AccountAccessCreate,
-  type AccountAccessResponse,
+  type AccountDetailsCreate, // Now correctly imported from updated lib/api-service
+  type AccountDetailsResponse, // Now correctly imported
+  type AccountAccessCreate, // Now correctly imported
+  type AccountAccessResponse, // Now correctly imported
 } from "@/lib/api-service"
 
 export default function FirmasPage() {
@@ -34,18 +34,18 @@ export default function FirmasPage() {
   const [activeTab, setActiveTab] = useState("users")
   const [showPrivateKeys, setShowPrivateKeys] = useState<{ [key: number]: boolean }>({})
 
-  // Form states
+  // Form states - now align with OpenAPI spec types
   const [newUser, setNewUser] = useState<AccountDetailsCreate>({
-    id_casamonarca: 1,
+    id_casamonarca: 1, // Default or from some config
     name: "",
     email: "",
     password: "",
-    type: "humanitario",
+    type: "humanitario", // Default type
     authorizacion: false,
   })
 
   const [newSignature, setNewSignature] = useState<AccountAccessCreate>({
-    id_account_details: 0,
+    id_account_details: 0, // Will be selected from a user
     numero_empleado: "",
     signer_name: "",
   })
@@ -68,11 +68,10 @@ export default function FirmasPage() {
           return
         }
 
-        // Load account details and digital signatures
-        const [users, signatures] = await Promise.all([accountDetailsApi.getAll(), accountAccessApi.getAll()])
+        const [usersData, signaturesData] = await Promise.all([accountDetailsApi.getAll(), accountAccessApi.getAll()])
 
-        setAccountDetails(users)
-        setDigitalSignatures(signatures)
+        setAccountDetails(usersData)
+        setDigitalSignatures(signaturesData)
       } catch (error) {
         console.error("Error loading data:", error)
         toast.error("Error al cargar los datos")
@@ -87,7 +86,7 @@ export default function FirmasPage() {
   // Create new user
   const handleCreateUser = async () => {
     if (!newUser.name || !newUser.email || !newUser.password) {
-      toast.error("Todos los campos obligatorios deben completarse")
+      toast.error("Nombre, email y contraseña son obligatorios.")
       return
     }
 
@@ -106,7 +105,7 @@ export default function FirmasPage() {
       toast.success("Usuario creado correctamente")
     } catch (error) {
       console.error("Error creating user:", error)
-      toast.error("Error al crear el usuario")
+      toast.error(`Error al crear el usuario: ${error instanceof Error ? error.message : "Error desconocido"}`)
     } finally {
       setIsSaving(false)
     }
@@ -115,12 +114,13 @@ export default function FirmasPage() {
   // Create digital signature
   const handleCreateSignature = async () => {
     if (!newSignature.id_account_details || !newSignature.numero_empleado || !newSignature.signer_name) {
-      toast.error("Todos los campos son obligatorios")
+      toast.error("Todos los campos para la firma son obligatorios.")
       return
     }
 
     setIsSaving(true)
     try {
+      // The backend will generate private_key and public_key
       const createdSignature = await accountAccessApi.create(newSignature)
       setDigitalSignatures([...digitalSignatures, createdSignature])
       setNewSignature({
@@ -128,16 +128,15 @@ export default function FirmasPage() {
         numero_empleado: "",
         signer_name: "",
       })
-      toast.success("Firma digital creada correctamente")
+      toast.success("Solicitud de firma digital enviada. El backend generará las claves.")
     } catch (error) {
       console.error("Error creating digital signature:", error)
-      toast.error("Error al crear la firma digital")
+      toast.error(`Error al crear la firma digital: ${error instanceof Error ? error.message : "Error desconocido"}`)
     } finally {
       setIsSaving(false)
     }
   }
 
-  // Toggle private key visibility
   const togglePrivateKeyVisibility = (signatureId: number) => {
     setShowPrivateKeys((prev) => ({
       ...prev,
@@ -145,7 +144,6 @@ export default function FirmasPage() {
     }))
   }
 
-  // Render department badge
   const renderDepartment = (type: string) => {
     let color = ""
     switch (type.toLowerCase()) {
@@ -167,12 +165,42 @@ export default function FirmasPage() {
       default:
         color = "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300"
     }
-
     return (
       <Badge variant="outline" className={color}>
         {type.charAt(0).toUpperCase() + type.slice(1)}
       </Badge>
     )
+  }
+
+  const downloadPublicKeyFile = (signature: AccountAccessResponse) => {
+    if (!signature.public_key) {
+      toast.error("Este usuario no tiene una clave pública configurada.")
+      return
+    }
+    const userDetail = accountDetails.find((u) => u.id === signature.id_account_details)
+    const userName = userDetail?.name || "usuario_desconocido"
+
+    try {
+      const pemContent = signature.public_key
+      if (!pemContent.includes("BEGIN PUBLIC KEY") || !pemContent.includes("END PUBLIC KEY")) {
+        // Loosened check slightly as per user's original code, but strict check is better
+        toast.warning("El formato de la clave pública podría no ser un PEM estándar, pero se intentará la descarga.")
+      }
+
+      const blob = new Blob([pemContent], { type: "application/x-pem-file" })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `${userName.replace(/\s+/g, "_").toLowerCase()}_public_key.pem`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      toast.success(`Clave pública de ${userName} descargada.`)
+    } catch (error) {
+      console.error("Error al descargar clave pública:", error)
+      toast.error("Error al descargar la clave pública.")
+    }
   }
 
   if (isLoading || authLoading) {
@@ -209,7 +237,6 @@ export default function FirmasPage() {
 
         <TabsContent value="users" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
-            {/* Create User Form */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -276,20 +303,17 @@ export default function FirmasPage() {
                 <Button onClick={handleCreateUser} disabled={isSaving} className="w-full">
                   {isSaving ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creando...
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creando...
                     </>
                   ) : (
                     <>
-                      <PlusIcon className="mr-2 h-4 w-4" />
-                      Crear Usuario
+                      <PlusIcon className="mr-2 h-4 w-4" /> Crear Usuario
                     </>
                   )}
                 </Button>
               </CardFooter>
             </Card>
 
-            {/* Users List */}
             <Card>
               <CardHeader>
                 <CardTitle>Usuarios Registrados</CardTitle>
@@ -298,23 +322,27 @@ export default function FirmasPage() {
               <CardContent>
                 {accountDetails.length > 0 ? (
                   <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {accountDetails.map((user) => (
-                      <div key={user.id} className="flex items-center justify-between rounded-md border p-3">
-                        <div>
-                          <p className="font-medium">{user.name}</p>
-                          <p className="text-sm text-muted-foreground">{user.email}</p>
-                          <div className="mt-1 flex items-center gap-2">
-                            {renderDepartment(user.type)}
-                            {user.authorizacion && (
-                              <Badge variant="outline" className="bg-green-50 text-green-700">
-                                <ShieldCheckIcon className="mr-1 h-3 w-3" />
-                                Autorizado
-                              </Badge>
-                            )}
+                    {accountDetails.map(
+                      (
+                        accDetail, // Renamed to avoid conflict
+                      ) => (
+                        <div key={accDetail.id} className="flex items-center justify-between rounded-md border p-3">
+                          <div>
+                            <p className="font-medium">{accDetail.name}</p>
+                            <p className="text-sm text-muted-foreground">{accDetail.email}</p>
+                            <div className="mt-1 flex items-center gap-2">
+                              {renderDepartment(accDetail.type)}
+                              {accDetail.authorizacion && (
+                                <Badge variant="outline" className="bg-green-50 text-green-700">
+                                  <ShieldCheckIcon className="mr-1 h-3 w-3" />
+                                  Autorizado
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ),
+                    )}
                   </div>
                 ) : (
                   <div className="flex h-40 items-center justify-center rounded-md border border-dashed">
@@ -328,20 +356,21 @@ export default function FirmasPage() {
 
         <TabsContent value="signatures" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2">
-            {/* Create Digital Signature Form */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <KeyIcon className="h-5 w-5" />
                   Crear Firma Digital
                 </CardTitle>
-                <CardDescription>Genera una nueva firma digital para un usuario</CardDescription>
+                <CardDescription>
+                  Genera una nueva firma digital para un usuario. Las claves se generarán en el backend.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="sig-user">Usuario *</Label>
                   <Select
-                    value={newSignature.id_account_details.toString()}
+                    value={newSignature.id_account_details ? newSignature.id_account_details.toString() : ""}
                     onValueChange={(value) =>
                       setNewSignature({ ...newSignature, id_account_details: Number.parseInt(value) })
                     }
@@ -350,11 +379,15 @@ export default function FirmasPage() {
                       <SelectValue placeholder="Seleccionar usuario" />
                     </SelectTrigger>
                     <SelectContent>
-                      {accountDetails.map((user) => (
-                        <SelectItem key={user.id} value={user.id.toString()}>
-                          {user.name} - {user.email}
-                        </SelectItem>
-                      ))}
+                      {accountDetails.map(
+                        (
+                          accDetail, // Renamed to avoid conflict
+                        ) => (
+                          <SelectItem key={accDetail.id} value={accDetail.id.toString()}>
+                            {accDetail.name} - {accDetail.email}
+                          </SelectItem>
+                        ),
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -385,20 +418,17 @@ export default function FirmasPage() {
                 >
                   {isSaving ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generando...
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generando...
                     </>
                   ) : (
                     <>
-                      <KeyIcon className="mr-2 h-4 w-4" />
-                      Generar Firma Digital
+                      <KeyIcon className="mr-2 h-4 w-4" /> Generar Firma Digital
                     </>
                   )}
                 </Button>
               </CardFooter>
             </Card>
 
-            {/* Digital Signatures List */}
             <Card>
               <CardHeader>
                 <CardTitle>Firmas Digitales</CardTitle>
@@ -408,28 +438,30 @@ export default function FirmasPage() {
                 {digitalSignatures.length > 0 ? (
                   <div className="space-y-4 max-h-96 overflow-y-auto">
                     {digitalSignatures.map((signature) => {
-                      const user = accountDetails.find((u) => u.id === signature.id_account_details)
+                      const sigUser = accountDetails.find((u) => u.id === signature.id_account_details)
                       return (
                         <div key={signature.id} className="rounded-md border p-3">
                           <div className="flex items-center justify-between mb-2">
                             <div>
                               <p className="font-medium">{signature.signer_name}</p>
                               <p className="text-sm text-muted-foreground">
-                                {user?.name} - {signature.numero_empleado}
+                                {sigUser?.name} - {signature.numero_empleado}
                               </p>
                             </div>
-                            <Badge variant="outline" className="bg-green-50 text-green-700">
-                              <KeyIcon className="mr-1 h-3 w-3" />
-                              Activa
-                            </Badge>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => downloadPublicKeyFile(signature)}
+                              className="flex items-center gap-1"
+                            >
+                              Descargar .pem
+                            </Button>
                           </div>
-
                           <div className="space-y-2 text-xs">
                             <div>
                               <Label className="text-xs font-medium">Clave Pública (PEM):</Label>
                               <Textarea value={signature.public_key} readOnly className="mt-1 h-20 text-xs font-mono" />
                             </div>
-
                             <div>
                               <div className="flex items-center justify-between">
                                 <Label className="text-xs font-medium">Clave Privada (PEM):</Label>
