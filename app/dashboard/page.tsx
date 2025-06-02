@@ -30,7 +30,7 @@ export default function Page() {
 
         // Filtrar por tipo de usuario si es necesario
         if (user && userType && userType !== "todos") {
-          const filtered = documents.filter((item) => item.type.toLowerCase() === userType.toLowerCase())
+          const filtered = documents.filter((item: { type: string }) => item.type.toLowerCase() === userType.toLowerCase())
           setData(filtered)
         } else {
           setData(documents)
@@ -39,7 +39,7 @@ export default function Page() {
         setError(null)
       } catch (err) {
         console.error("Error fetching documents:", err)
-        setError("Error al cargar los documentos")
+        
         toast.error("Error al cargar los documentos")
       } finally {
         setIsLoading(false)
