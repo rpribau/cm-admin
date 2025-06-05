@@ -4,7 +4,7 @@ import * as React from "react"
 import { LogOutIcon, UserIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { useAuth } from "@/contexts/auth-context"
+import { useAuth } from "@/contexts/auth-provider"
 import {
   DropdownMenu,
   DropdownMenuContent,

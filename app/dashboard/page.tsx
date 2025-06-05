@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { DataTable } from "../../components/data-table"
 import { SectionCards } from "../../components/section-cards"
-import { useAuth } from "@/contexts/auth-context"
+import { useAuth } from "@/contexts/auth-provider"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 

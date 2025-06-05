@@ -1,5 +1,5 @@
-// API Service for interacting with the backend
-const API_BASE_URL = "http://172.172.219.21:8000"
+const API_BASE_URL = "http://localhost:8000" // Cambia esto a tu URL de API real
+// const API_BASE_URL = "http://172.172.219.21:8000"
 
 // Types based on the OpenAPI specification
 export interface DocumentoModel {
@@ -201,6 +201,68 @@ export const linkApi = {
   },
 }
 
+// Document upload API function
+export const documentUploadApi = {
+  async uploadDocument(
+    file: File,
+    documentData: {
+      header: string
+      type: string
+      status: string
+      target: number
+      limit: number
+      limit_date: string
+      reviewer: string
+      description: string
+    },
+  ): Promise<any> {
+    const formData = new FormData()
+    formData.append("file", file)
+
+    const queryParams = new URLSearchParams({
+      header: documentData.header,
+      type: documentData.type,
+      status: documentData.status,
+      target: documentData.target.toString(),
+      limit: documentData.limit.toString(),
+      limit_date: documentData.limit_date,
+      reviewer: documentData.reviewer,
+      description: documentData.description,
+    })
+
+    const url = `${API_BASE_URL}/subir_documento/?${queryParams}`
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        body: formData,
+      })
+
+      if (!response.ok) {
+        let errorMessage = `API Error: ${response.status} ${response.statusText}`
+        try {
+          const errorData = await response.json()
+          if (errorData.detail) {
+            if (Array.isArray(errorData.detail)) {
+              errorMessage = errorData.detail.map((err: any) => `${err.loc.join(" -> ")}: ${err.msg}`).join("; ")
+            } else {
+              errorMessage = errorData.detail
+            }
+          }
+        } catch (e) {
+          // Si parsing JSON falla, usar el mensaje de error predeterminado
+        }
+        throw new ApiError(errorMessage, response.status)
+      }
+
+      return response.json()
+    } catch (error) {
+      console.error(`Error uploading document:`, error)
+      throw error
+    }
+  },
+}
+
 // Account Details API (User management)
 export const accountDetailsApi = {
   async getAll(): Promise<AccountDetailsResponse[]> {
@@ -222,6 +284,12 @@ export const accountDetailsApi = {
     return fetchApi<AccountDetailsResponse>(`account_details/${id}`, {
       method: "PUT",
       body: JSON.stringify(user),
+    })
+  },
+
+  async delete(id: number): Promise<void> {
+    return fetchApi<void>(`account_details/${id}`, {
+      method: "DELETE",
     })
   },
 }

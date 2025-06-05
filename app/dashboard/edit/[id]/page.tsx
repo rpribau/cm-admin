@@ -29,7 +29,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { schema } from "@/components/data-table"
 import type { z } from "zod"
-import { useAuth } from "@/contexts/auth-context"
+import { useAuth } from "@/contexts/auth-provider"
 import { documentoCompletoApi } from "@/lib/api-service"
 
 export default function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -82,36 +82,70 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
 
       setIsLoading(true)
       try {
-        // Obtener los datos del documento desde la API
+        // Intentar obtener los datos del documento desde la API
         const documentId = Number.parseInt(id)
-        const documentoCompleto = await documentoCompletoApi.getById(documentId)
 
-        if (!documentoCompleto) {
-          toast.error("Documento no encontrado")
-          router.push("/dashboard")
-          return
+        try {
+          // Primero intentar obtener el documento de la API
+          const documentoCompleto = await documentoCompletoApi.getById(documentId)
+
+          if (documentoCompleto) {
+            // Convertir al formato esperado por el frontend
+            const frontendDoc = documentoCompletoApi.mapToFrontendFormat(documentoCompleto)
+
+            // Verificar permisos
+            const hasPermission = checkPermissions(frontendDoc)
+
+            if (hasPermission) {
+              setItem(frontendDoc)
+              setEditableFields({
+                header: frontendDoc.header,
+                description: frontendDoc.description || "",
+                notes: frontendDoc.notes || "",
+                status: frontendDoc.status,
+                reviewer: frontendDoc.reviewer,
+                limit_date: frontendDoc.limit_date,
+              })
+              setPermissionError(null)
+              setIsLoading(false)
+              return
+            }
+          }
+        } catch (apiError) {
+          console.error("Error al obtener documento de la API:", apiError)
+          // Continuar con el plan de respaldo
         }
 
-        // Convertir al formato esperado por el frontend
-        const frontendDoc = documentoCompletoApi.mapToFrontendFormat(documentoCompleto)
+        // Plan de respaldo: obtener datos de la API local
+        console.log("Usando datos de respaldo de la API local")
+        const response = await fetch("/api/documents")
+        const allData = await response.json()
 
-        // Verificar permisos
-        const hasPermission = checkPermissions(frontendDoc)
+        // Encontrar el elemento con el ID correspondiente
+        const foundItem = allData.find((item: any) => item.id === Number.parseInt(id))
 
-        if (hasPermission) {
-          setItem(frontendDoc)
-          setEditableFields({
-            header: frontendDoc.header,
-            description: frontendDoc.description || "",
-            notes: frontendDoc.notes || "",
-            status: frontendDoc.status,
-            reviewer: frontendDoc.reviewer,
-            limit_date: frontendDoc.limit_date,
-          })
-          setPermissionError(null)
+        if (foundItem) {
+          // Verificar permisos
+          const hasPermission = checkPermissions(foundItem)
+
+          if (hasPermission) {
+            setItem(foundItem)
+            setEditableFields({
+              header: foundItem.header,
+              description: foundItem.description || "",
+              notes: foundItem.notes || "",
+              status: foundItem.status,
+              reviewer: foundItem.reviewer,
+              limit_date: foundItem.limit_date,
+            })
+            setPermissionError(null)
+          } else {
+            // Si no tiene permisos, no establecer el item
+            setItem(null)
+          }
         } else {
-          // Si no tiene permisos, no establecer el item
-          setItem(null)
+          toast.error("Elemento no encontrado")
+          router.push("/dashboard")
         }
       } catch (error) {
         console.error("Error al cargar datos:", error)

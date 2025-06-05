@@ -16,7 +16,7 @@ export type UserRole =
   | "admin-legal"
   | "admin-comunicacion"
   | "admin-almacen"
-  | "superuser" // Añadido el rol de superusuario
+  | "superuser"
 
 // Definir la interfaz del usuario
 export interface User {
@@ -24,6 +24,7 @@ export interface User {
   name: string
   email: string
   role: UserRole
+  types?: string[]
 }
 
 // Definir la interfaz del contexto de autenticación
@@ -34,8 +35,9 @@ export interface AuthContextType {
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   isAdmin: boolean
-  isSuperuser: boolean // Añadida propiedad para verificar si es superusuario
+  isSuperuser: boolean
   userType: string | null
+  userTypes: string[]
 }
 
 // Crear el contexto de autenticación
@@ -51,7 +53,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const response = await fetch("/api/auth/me")
+        const response = await fetch("/api/auth/me", {
+          credentials: "include",
+        })
         if (response.ok) {
           const data = await response.json()
           setUser(data.user)
@@ -78,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       })
 
@@ -99,14 +104,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Función para cerrar sesión
   const logout = async () => {
+    setIsLoading(true)
     try {
+      // Primero limpiar el estado local
+      setUser(null)
+
+      // Luego llamar al endpoint de logout
       await fetch("/api/auth/logout", {
         method: "POST",
+        credentials: "include",
       })
-      setUser(null)
-      router.push("/login")
+
+      // Forzar recarga de la página para limpiar cualquier estado residual
+      window.location.href = "/login"
     } catch (error) {
       console.error("Error al cerrar sesión:", error)
+      // Incluso si hay error, limpiar estado y redirigir
+      setUser(null)
+      window.location.href = "/login"
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -116,8 +133,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Determinar si el usuario es superusuario
   const isSuperuser = user?.role === "superuser" || false
 
-  // Obtener el tipo de usuario (humanitario, psicosocial, etc.)
+  // Obtener el tipo de usuario principal (para compatibilidad)
   const userType = user ? (user.role === "superuser" ? "todos" : user.role.replace("admin-", "")) : null
+
+  // Obtener todos los tipos de usuario
+  const userTypes = user?.types || (userType && userType !== "todos" ? [userType] : [])
 
   return (
     <AuthContext.Provider
@@ -130,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAdmin,
         isSuperuser,
         userType,
+        userTypes,
       }}
     >
       {children}

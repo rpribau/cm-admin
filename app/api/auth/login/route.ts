@@ -1,6 +1,6 @@
 import { cookies } from "next/headers"
 import { type NextRequest, NextResponse } from "next/server"
-import type { UserRole } from "@/contexts/auth-context"
+import type { UserRole } from "@/contexts/auth-provider"
 import { accountDetailsApi, type AccountDetailsResponse } from "@/lib/api-service"
 
 // Superuser credentials (kept as per requirement)
@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
       name: string
       email: string
       role: UserRole
+      types?: string[]
     } | null = null
 
     // 1. Check for Superuser
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
           name: SUPERUSER_NAME,
           email: SUPERUSER_EMAIL,
           role: SUPERUSER_ROLE,
+          types: ["todos"], // Superuser has access to all types
         }
       }
     } else {
@@ -40,18 +42,23 @@ export async function POST(request: NextRequest) {
         )
 
         if (apiUser) {
+          // Parse multiple types from comma-separated string
+          const userTypes = apiUser.type.includes(",")
+            ? apiUser.type.split(",").map((t) => t.trim().toLowerCase())
+            : [apiUser.type.toLowerCase()]
+
+          // Determine primary role based on authorization and first type
+          const primaryType = userTypes[0] as UserRole
           let role: UserRole
-          const apiUserType = apiUser.type.toLowerCase() as UserRole // Assuming type matches a base role
 
           if (apiUser.authorizacion) {
             // Construct admin role, e.g., "admin-humanitario"
-            role = `admin-${apiUserType}` as UserRole
+            role = `admin-${primaryType}` as UserRole
           } else {
-            role = apiUserType
+            role = primaryType
           }
 
           // Validate if the constructed role is a valid UserRole
-          // This is a basic check; more robust validation might be needed if types are very dynamic
           const validRoles: UserRole[] = [
             "humanitario",
             "psicosocial",
@@ -68,7 +75,7 @@ export async function POST(request: NextRequest) {
 
           if (!validRoles.includes(role)) {
             console.warn(`Invalid role constructed for user ${apiUser.email}: ${role}. Defaulting to base type.`)
-            role = apiUserType // Fallback to base type if admin variant is not standard
+            role = primaryType // Fallback to base type if admin variant is not standard
           }
 
           authenticatedUser = {
@@ -76,6 +83,7 @@ export async function POST(request: NextRequest) {
             name: apiUser.name, // Use name from API
             email: apiUser.email,
             role: role,
+            types: userTypes, // Include all user types
           }
         }
       } catch (apiError) {
@@ -116,9 +124,17 @@ export async function POST(request: NextRequest) {
       sameSite: "strict",
     })
 
-    // It's good practice to also store user's name and email if they are frequently accessed by /api/auth/me
-    // to avoid reconstructing them, but for now, role is the most critical for /me.
-    // Storing more in cookies increases their size.
+    // Store user types for multi-type users
+    if (authenticatedUser.types) {
+      cookieStore.set({
+        name: "user-types",
+        value: authenticatedUser.types.join(","),
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 60 * 60 * 24 * 7, // 1 week
+        sameSite: "strict",
+      })
+    }
 
     return NextResponse.json({
       success: true,
@@ -127,6 +143,7 @@ export async function POST(request: NextRequest) {
         name: authenticatedUser.name,
         email: authenticatedUser.email,
         role: authenticatedUser.role,
+        types: authenticatedUser.types,
       },
     })
   } catch (error) {

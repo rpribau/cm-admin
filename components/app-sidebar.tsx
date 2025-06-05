@@ -2,7 +2,6 @@
 
 import type * as React from "react"
 import {
-  ArrowUpCircleIcon,
   BarChartIcon,
   CameraIcon,
   ClipboardListIcon,
@@ -15,11 +14,11 @@ import {
   SettingsIcon,
   UsersIcon,
 } from "lucide-react"
+import Image from "next/image"
 
 import { NavDocuments } from "./nav-documents"
 import { NavMain } from "./nav-main"
 import { NavSecondary } from "./nav-secondary"
-import { NavUser } from "./nav-user"
 import {
   Sidebar,
   SidebarContent,
@@ -30,7 +29,7 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar"
-import { useAuth } from "@/contexts/auth-context"
+import { useAuth } from "@/contexts/auth-provider"
 
 const data = {
   user: {
@@ -138,8 +137,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-              <a href="#">
-                <ArrowUpCircleIcon className="h-5 w-5" />
+              <a href="/dashboard" className="flex items-center gap-2">
+                <div className="flex h-5 w-5 items-center justify-center">
+                  <Image src="/casa-monarca.ico" alt="Casa Monarca" width={140} height={102} className="h-102 w-140" />
+                </div>
                 <span className="text-base font-semibold">Casa Monarca</span>
               </a>
             </SidebarMenuButton>
@@ -150,8 +151,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain items={data.navMain} />
         <NavDocuments items={data.documents} />
 
-        {/* Opciones para administradores y superusuarios */}
-        
 
         {/* Opción "Crear firmas" solo visible para superusuarios */}
         {isSuperuser && (
@@ -169,9 +168,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
-      <SidebarFooter>
-        <NavUser user={data.user} />
-      </SidebarFooter>
     </Sidebar>
   )
 }

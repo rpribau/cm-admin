@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CalendarIcon, Loader2, LinkIcon, PlusIcon, Trash2Icon, ExternalLinkIcon } from "lucide-react"
+import { CalendarIcon, Loader2, UploadIcon, FileIcon, Trash2Icon, CheckIcon } from "lucide-react"
 import { es } from "date-fns/locale"
 import { z } from "zod"
 import { toast } from "sonner"
@@ -15,8 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SheetClose, SheetFooter } from "@/components/ui/sheet"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { useAuth } from "@/contexts/auth-context"
-import { accountDetailsApi, documentoCompletoApi, type AccountDetailsResponse } from "@/lib/api-service"
+import { useAuth } from "@/contexts/auth-provider"
+import { accountDetailsApi, documentUploadApi, type AccountDetailsResponse } from "@/lib/api-service"
 import { Textarea } from "@/components/ui/textarea"
 
 // Esquema para validación
@@ -28,31 +28,19 @@ const sectionSchema = z.object({
   limit_date: z.string(),
   reviewer: z.string(),
   description: z.string().optional(),
-  links: z
-    .array(
-      z.object({
-        id: z.string(),
-        title: z.string(),
-        url: z.string().url("La URL no es válida"),
-      }),
-    )
-    .optional(),
+  target: z.number().min(1, "El objetivo debe ser mayor a 0"),
+  limit: z.number().min(1, "El límite debe ser mayor a 0"),
+  files: z.array(z.instanceof(File)).optional(),
 })
-
-// Definir el tipo para un enlace
-interface LinkItem {
-  id: string
-  title: string
-  url: string
-}
 
 type FormData = z.infer<typeof sectionSchema>
 
 interface AddSectionFormProps {
   onAddSection: (data: FormData) => void
+  onSuccess: () => void
 }
 
-export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
+export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps) {
   const { userType } = useAuth()
   const [formData, setFormData] = React.useState<FormData>({
     header: "",
@@ -60,19 +48,13 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
     limit_date: new Date().toISOString().split("T")[0],
     reviewer: "Asignar revisor",
     description: "",
-    links: [],
+    target: 1,
+    limit: 1,
+    files: [],
   })
   const [loading, setLoading] = React.useState(false)
   const [date, setDate] = React.useState<Date | undefined>(new Date())
-
-  const [newLink, setNewLink] = React.useState<Omit<LinkItem, "id">>({
-    title: "",
-    url: "",
-  })
-  const [linkErrors, setLinkErrors] = React.useState({
-    title: false,
-    url: false,
-  })
+  const [uploadingFiles, setUploadingFiles] = React.useState<string[]>([])
 
   const [reviewers, setReviewers] = React.useState<AccountDetailsResponse[]>([])
   const [loadingReviewers, setLoadingReviewers] = React.useState(true)
@@ -102,7 +84,29 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
     if (formData.type) {
       fetchReviewers()
     }
-  }, [formData.type]) // Re-fetch/filter when document type changes
+  }, [formData.type])
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    const pdfFiles = files.filter((file) => file.type === "application/pdf")
+
+    if (pdfFiles.length !== files.length) {
+      toast.error("Solo se permiten archivos PDF")
+      return
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      files: [...(prev.files || []), ...pdfFiles],
+    }))
+  }
+
+  const removeFile = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      files: prev.files?.filter((_, i) => i !== index) || [],
+    }))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -114,52 +118,63 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
         limit_date: date ? date.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
       }
 
-      const apiDocument = documentoCompletoApi.mapToApiFormat({
-        id: null,
-        ...updatedFormData,
-        status: "No Iniciado",
-        // description is already in updatedFormData
-        authorizations: [
-          { name: "Carlos Méndez", role: "Director de Proyecto", status: "pending", date: "" },
-          { name: "María García", role: "Gerente de Calidad", status: "pending", date: "" },
-          { name: "Laura Sánchez", role: "Directora Financiera", status: "pending", date: "" },
-        ],
-      })
+      // Si hay archivos, usar el endpoint de subir documento
+      if (updatedFormData.files && updatedFormData.files.length > 0) {
+        setUploadingFiles(updatedFormData.files.map((file) => file.name))
 
-      await documentoCompletoApi.create(apiDocument)
+        for (const file of updatedFormData.files) {
+          try {
+            await documentUploadApi.uploadDocument(file, {
+              header: `${updatedFormData.header} - ${file.name}`,
+              type: updatedFormData.type,
+              status: "No Iniciado",
+              target: updatedFormData.target,
+              limit: updatedFormData.limit,
+              limit_date: updatedFormData.limit_date,
+              reviewer: updatedFormData.reviewer,
+              description: updatedFormData.description || "",
+            })
+
+            setUploadingFiles((prev) => prev.filter((name) => name !== file.name))
+          } catch (error) {
+            console.error(`Error uploading file ${file.name}:`, error)
+            toast.error(`Error al subir ${file.name}`)
+            setUploadingFiles((prev) => prev.filter((name) => name !== file.name))
+          }
+        }
+      } else {
+        // Si no hay archivos, crear documento sin archivos (usando el método anterior)
+        const documentData = {
+          header: updatedFormData.header,
+          type: updatedFormData.type,
+          status: "No Iniciado",
+          target: updatedFormData.target,
+          limit: updatedFormData.limit,
+          limit_date: updatedFormData.limit_date,
+          reviewer: updatedFormData.reviewer,
+          description: updatedFormData.description || "",
+        }
+
+        await documentUploadApi.uploadDocument(new File([], ""), documentData)
+      }
+
       onAddSection(updatedFormData)
-      toast.success("Sección añadida correctamente")
+      onSuccess() // Llamar a la función de éxito
     } catch (error) {
       console.error("Error al crear documento:", error)
       toast.error("Error al crear la sección")
     } finally {
       setLoading(false)
+      setUploadingFiles([])
     }
   }
 
-  const addLink = () => {
-    const titleError = newLink.title.trim() === ""
-    const urlError = newLink.url.trim() === "" || !isValidUrl(newLink.url)
-    setLinkErrors({ title: titleError, url: urlError })
-    if (titleError || urlError) return
-
-    const link: LinkItem = { id: crypto.randomUUID(), title: newLink.title, url: newLink.url }
-    setFormData({ ...formData, links: [...(formData.links || []), link] })
-    setNewLink({ title: "", url: "" })
-    setLinkErrors({ title: false, url: false })
-  }
-
-  const removeLink = (id: string) => {
-    setFormData({ ...formData, links: formData.links?.filter((link) => link.id !== id) || [] })
-  }
-
-  const isValidUrl = (url: string) => {
-    try {
-      new URL(url)
-      return true
-    } catch (e) {
-      return false
-    }
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes"
+    const k = 1024
+    const sizes = ["Bytes", "KB", "MB", "GB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
   return (
@@ -182,7 +197,7 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
         </Label>
         <Select
           value={formData.type}
-          onValueChange={(value) => setFormData({ ...formData, type: value, reviewer: "Asignar revisor" })} // Reset reviewer on type change
+          onValueChange={(value) => setFormData({ ...formData, type: value, reviewer: "Asignar revisor" })}
           required
         >
           <SelectTrigger id="type">
@@ -196,6 +211,35 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
             <SelectItem value="Almacén">Almacén</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-3">
+          <Label htmlFor="target" className="flex items-center">
+            Objetivo <span className="ml-1 text-red-500">*</span>
+          </Label>
+          <Input
+            id="target"
+            type="number"
+            min="1"
+            value={formData.target}
+            onChange={(e) => setFormData({ ...formData, target: Number.parseInt(e.target.value) || 1 })}
+            required
+          />
+        </div>
+        <div className="flex flex-col gap-3">
+          <Label htmlFor="limit" className="flex items-center">
+            Límite <span className="ml-1 text-red-500">*</span>
+          </Label>
+          <Input
+            id="limit"
+            type="number"
+            min="1"
+            value={formData.limit}
+            onChange={(e) => setFormData({ ...formData, limit: Number.parseInt(e.target.value) || 1 })}
+            required
+          />
+        </div>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -260,45 +304,43 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
       <Separator className="my-2" />
 
       <div className="flex flex-col gap-3">
-        <Label className="text-base font-medium">Enlaces a documentos</Label>
-        <p className="text-sm text-muted-foreground">
-          Añade enlaces a documentos almacenados en SharePoint o OneDrive.
-        </p>
+        <Label className="text-base font-medium">Subir archivos (PDF)</Label>
+        <p className="text-sm text-muted-foreground">Sube archivos PDF que se almacenarán en el sistema.</p>
 
-        {formData.links && formData.links.length > 0 && (
+        {formData.files && formData.files.length > 0 && (
           <Card className="mb-3">
             <CardContent className="p-3">
               <div className="flex flex-col gap-2">
-                {formData.links.map((link) => (
-                  <div key={link.id} className="flex items-center justify-between gap-2 rounded-md border p-2">
+                {formData.files.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between gap-2 rounded-md border p-2">
                     <div className="flex items-center gap-2 overflow-hidden">
-                      <LinkIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <FileIcon className="h-4 w-4 shrink-0 text-red-500" />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{link.title}</p>
-                        <p className="truncate text-xs text-muted-foreground">{link.url}</p>
+                        <p className="truncate font-medium">{file.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => window.open(link.url, "_blank")}
-                      >
-                        <ExternalLinkIcon className="h-4 w-4" />
-                        <span className="sr-only">Abrir enlace</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive"
-                        onClick={() => removeLink(link.id)}
-                      >
-                        <Trash2Icon className="h-4 w-4" />
-                        <span className="sr-only">Eliminar enlace</span>
-                      </Button>
+                      {uploadingFiles.includes(file.name) ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-xs">Subiendo...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <CheckIcon className="h-4 w-4 text-green-500" />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive"
+                            onClick={() => removeFile(index)}
+                          >
+                            <Trash2Icon className="h-4 w-4" />
+                            <span className="sr-only">Eliminar archivo</span>
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -308,38 +350,16 @@ export function AddSectionForm({ onAddSection }: AddSectionFormProps) {
         )}
 
         <div className="flex flex-col gap-3 rounded-md border p-3">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="link-title" className={linkErrors.title ? "text-destructive" : ""}>
-              Título del documento
-            </Label>
-            <Input
-              id="link-title"
-              placeholder="Informe mensual, Presupuesto, etc."
-              value={newLink.title}
-              onChange={(e) => setNewLink({ ...newLink, title: e.target.value })}
-              className={linkErrors.title ? "border-destructive" : ""}
-            />
-            {linkErrors.title && <p className="text-xs text-destructive">El título es obligatorio</p>}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="link-url" className={linkErrors.url ? "text-destructive" : ""}>
-              URL del documento (SharePoint/OneDrive)
-            </Label>
-            <Input
-              id="link-url"
-              placeholder="https://organizacion-my.sharepoint.com/..."
-              value={newLink.url}
-              onChange={(e) => setNewLink({ ...newLink, url: e.target.value })}
-              className={linkErrors.url ? "border-destructive" : ""}
-            />
-            {linkErrors.url && <p className="text-xs text-destructive">Introduce una URL válida</p>}
-          </div>
-
-          <Button type="button" variant="outline" className="mt-1 w-full" onClick={addLink}>
-            <PlusIcon className="mr-2 h-4 w-4" />
-            Añadir enlace
-          </Button>
+          <Label htmlFor="file-upload" className="cursor-pointer">
+            <div className="flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-muted-foreground/25 p-6 text-center hover:border-muted-foreground/50">
+              <UploadIcon className="h-8 w-8 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Haz clic para subir archivos PDF</p>
+                <p className="text-sm text-muted-foreground">o arrastra y suelta aquí</p>
+              </div>
+            </div>
+          </Label>
+          <Input id="file-upload" type="file" accept=".pdf" multiple onChange={handleFileChange} className="hidden" />
         </div>
       </div>
 
