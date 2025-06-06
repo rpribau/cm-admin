@@ -1,37 +1,28 @@
-import { cookies } from "next/headers"
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies()
+    console.log("🚪 Procesando logout...")
 
-    // Eliminar todas las cookies de autenticación
-    const cookiesToDelete = ["auth-token", "user-role", "user-types"]
-
-    cookiesToDelete.forEach((cookieName) => {
-      cookieStore.set({
-        name: cookieName,
-        value: "",
-        httpOnly: true,
-        path: "/",
-        expires: new Date(0), // Fecha en el pasado para eliminar la cookie
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-      })
-    })
-
-    return NextResponse.json({
+    // Crear respuesta
+    const response = NextResponse.json({
       success: true,
-      message: "Sesión cerrada correctamente",
+      message: "Sesión cerrada exitosamente",
     })
+
+    // Eliminar la cookie de autenticación
+    response.cookies.set("auth-token", "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 0, // Expira inmediatamente
+      path: "/",
+    })
+
+    console.log("✅ Logout procesado exitosamente")
+    return response
   } catch (error) {
-    console.error("Error al cerrar sesión:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        message: "Error al cerrar sesión",
-      },
-      { status: 500 },
-    )
+    console.error("❌ Error en logout:", error)
+    return NextResponse.json({ success: false, message: "Error interno del servidor" }, { status: 500 })
   }
 }

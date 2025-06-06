@@ -13,8 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/contexts/auth-provider"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
+
 
 const loginSchema = z.object({
   email: z.string().email({
@@ -35,7 +34,7 @@ export default function LoginPage() {
   const { login, user } = useAuth()
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const [selectedRole, setSelectedRole] = React.useState<string>("humanitario")
+  
 
   // Redirigir si ya está autenticado
   React.useEffect(() => {
@@ -52,11 +51,7 @@ export default function LoginPage() {
     },
   })
 
-  // Actualizar el email basado en el rol seleccionado
-  React.useEffect(() => {
-    form.setValue("email", `${selectedRole}@email.com`)
-    form.setValue("password", "password")
-  }, [selectedRole, form])
+  
 
   async function onSubmit(data: LoginFormValues) {
     setIsLoading(true)
@@ -97,7 +92,7 @@ export default function LoginPage() {
                     <FormLabel>Correo electrónico</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="tu@ejemplo.com"
+                        placeholder="usuario@email.com"
                         type="email"
                         autoComplete="email"
                         disabled={isLoading}

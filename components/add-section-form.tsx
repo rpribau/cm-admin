@@ -16,9 +16,8 @@ import { SheetClose, SheetFooter } from "@/components/ui/sheet"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/contexts/auth-provider"
-import { accountDetailsApi, documentUploadApi, type AccountDetailsResponse } from "@/lib/api-service"
+import { accountDetailsApi, documentUploadApi, type AccountDetailsResponse, autorizacionApi } from "@/lib/api-service"
 import { Textarea } from "@/components/ui/textarea"
-import { autorizacionApi, type AutorizacionModel } from "@/lib/api-service"
 
 // Esquema para validación
 const sectionSchema = z.object({
@@ -109,6 +108,7 @@ export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps)
     }))
   }
 
+  // Modificar la función handleSubmit para crear autorizaciones al momento de subir el documento
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -120,21 +120,15 @@ export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps)
       }
 
       // Obtener usuarios autorizados para este tipo de documento
-      let authorizedUsers: AccountDetailsResponse[] = []
-      try {
-        // Obtener todos los usuarios con autorización para este tipo
-        const allUsers = await accountDetailsApi.getAll()
-        authorizedUsers = allUsers.filter(
-          (user) =>
-            user.authorizacion === true &&
-            (user.type.toLowerCase() === updatedFormData.type.toLowerCase() ||
-              user.type.toLowerCase().includes(updatedFormData.type.toLowerCase())),
-        )
+      const allUsers = await accountDetailsApi.getAll()
+      const authorizedUsers = allUsers.filter(
+        (user) =>
+          user.authorizacion === true &&
+          (user.type.toLowerCase() === updatedFormData.type.toLowerCase() ||
+            user.type.toLowerCase().includes(updatedFormData.type.toLowerCase())),
+      )
 
-        console.log(`Encontrados ${authorizedUsers.length} usuarios autorizados para tipo ${updatedFormData.type}`)
-      } catch (error) {
-        console.error("Error al obtener usuarios autorizados:", error)
-      }
+      console.log(`Encontrados ${authorizedUsers.length} usuarios autorizados para tipo ${updatedFormData.type}`)
 
       // Si hay archivos, usar el endpoint de subir documento
       if (updatedFormData.files && updatedFormData.files.length > 0) {
@@ -142,7 +136,7 @@ export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps)
 
         for (const file of updatedFormData.files) {
           try {
-            // Crear el documento con las autorizaciones de usuarios reales
+            // Crear el documento
             const documentData = {
               header: `${updatedFormData.header} - ${file.name}`,
               type: updatedFormData.type,
@@ -154,35 +148,24 @@ export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps)
               description: updatedFormData.description || "",
             }
 
-            const createdDoc = await documentUploadApi.uploadDocument(file, documentData)
+            // Subir el documento y obtener su ID
+            const response = await documentUploadApi.uploadDocument(file, documentData)
+            const documentId = response.documento_id
 
-            // Crear autorizaciones para este documento si hay usuarios autorizados
-            if (authorizedUsers.length > 0 && createdDoc && createdDoc.id) {
-              // Verificar si ya existen autorizaciones para este documento
-              let existingAuths: AutorizacionModel[] = []
-              try {
-                existingAuths = await autorizacionApi.getByDocumentoId(createdDoc.id)
-              } catch (error) {
-                console.error("Error al verificar autorizaciones existentes:", error)
-              }
-
-              // Crear solo las autorizaciones que no existen
+            // Crear autorizaciones para este documento
+            if (documentId && authorizedUsers.length > 0) {
               for (const user of authorizedUsers) {
-                // Verificar si este usuario ya tiene una autorización para este documento
-                const authExists = existingAuths.some((auth) => auth.name === user.name)
-
-                if (!authExists) {
-                  try {
-                    await autorizacionApi.create({
-                      documento_id: createdDoc.id,
-                      name: user.name,
-                      role: `Autorización ${updatedFormData.type}`,
-                      status: "pending",
-                      date: null,
-                    })
-                  } catch (authError) {
-                    console.error(`Error al crear autorización para usuario ${user.name}:`, authError)
-                  }
+                try {
+                  await autorizacionApi.create({
+                    documento_id: documentId,
+                    name: user.name,
+                    role: `Autorización ${updatedFormData.type}`,
+                    status: "pending",
+                    date: null,
+                  })
+                  console.log(`Autorización creada para ${user.name} en documento ${documentId}`)
+                } catch (authError) {
+                  console.error(`Error al crear autorización para usuario ${user.name}:`, authError)
                 }
               }
             }
@@ -207,35 +190,24 @@ export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps)
           description: updatedFormData.description || "",
         }
 
-        const createdDoc = await documentUploadApi.uploadDocument(new File([], ""), documentData)
+        // Crear el documento y obtener su ID
+        const response = await documentUploadApi.uploadDocument(new File([], ""), documentData)
+        const documentId = response.documento_id
 
-        // Crear autorizaciones para este documento si hay usuarios autorizados
-        if (authorizedUsers.length > 0 && createdDoc && createdDoc.id) {
-          // Verificar si ya existen autorizaciones para este documento
-          let existingAuths: AutorizacionModel[] = []
-          try {
-            existingAuths = await autorizacionApi.getByDocumentoId(createdDoc.id)
-          } catch (error) {
-            console.error("Error al verificar autorizaciones existentes:", error)
-          }
-
-          // Crear solo las autorizaciones que no existen
+        // Crear autorizaciones para este documento
+        if (documentId && authorizedUsers.length > 0) {
           for (const user of authorizedUsers) {
-            // Verificar si este usuario ya tiene una autorización para este documento
-            const authExists = existingAuths.some((auth) => auth.name === user.name)
-
-            if (!authExists) {
-              try {
-                await autorizacionApi.create({
-                  documento_id: createdDoc.id,
-                  name: user.name,
-                  role: `Autorización ${updatedFormData.type}`,
-                  status: "pending",
-                  date: null,
-                })
-              } catch (authError) {
-                console.error(`Error al crear autorización para usuario ${user.name}:`, authError)
-              }
+            try {
+              await autorizacionApi.create({
+                documento_id: documentId,
+                name: user.name,
+                role: `Autorización ${updatedFormData.type}`,
+                status: "pending",
+                date: null,
+              })
+              console.log(`Autorización creada para ${user.name} en documento ${documentId}`)
+            } catch (authError) {
+              console.error(`Error al crear autorización para usuario ${user.name}:`, authError)
             }
           }
         }

@@ -15,10 +15,12 @@ import {
   UsersIcon,
 } from "lucide-react"
 import Image from "next/image"
+import Link from "next/link"
 
 import { NavDocuments } from "./nav-documents"
 import { NavMain } from "./nav-main"
 import { NavSecondary } from "./nav-secondary"
+
 import {
   Sidebar,
   SidebarContent,
@@ -137,12 +139,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-              <a href="/dashboard" className="flex items-center gap-2">
+              <Link href="/dashboard" className="flex items-center gap-2">
                 <div className="flex h-5 w-5 items-center justify-center">
                   <Image src="/casa-monarca.ico" alt="Casa Monarca" width={140} height={102} className="h-102 w-140" />
                 </div>
                 <span className="text-base font-semibold">Casa Monarca</span>
-              </a>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -151,16 +153,32 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain items={data.navMain} />
         <NavDocuments items={data.documents} />
 
+        {/* Opciones para administradores y superusuarios */}
+        {(isAdmin || isSuperuser) && (
+          <>
+            <SidebarSeparator />
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <a href="/dashboard/usuarios">
+                    <UsersIcon className="h-4 w-4" />
+                    <span>Gestión de Usuarios</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </>
+        )}
 
         {/* Opción "Crear firmas" solo visible para superusuarios */}
         {isSuperuser && (
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton asChild>
-                <a href="/dashboard/firmas">
+                <Link href="/dashboard/firmas">
                   <PenToolIcon className="h-4 w-4" />
                   <span>Crear firmas</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -168,6 +186,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
+      <SidebarFooter>
+        
+      </SidebarFooter>
     </Sidebar>
   )
 }

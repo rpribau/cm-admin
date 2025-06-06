@@ -55,6 +55,27 @@ export interface AccountAccessResponse extends AccountAccessCreate {
   public_key: string
 }
 
+export interface SignatureRequest {
+  account_access_id: number
+  documento_id: number
+  public_key_pem: string
+}
+
+export interface SignatureResponse {
+  documento_id: number
+  signature: string
+  message_hash: string
+  success: boolean
+  message: string
+}
+
+export interface DocumentoFirmado {
+  filename: string
+  path: string
+  size: number
+  created_at: string
+}
+
 // Combined document type that includes authorizations and links
 export interface DocumentoCompleto extends DocumentoModel {
   authorizations?: AutorizacionModel[]
@@ -132,7 +153,12 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
       )
     }
 
-   
+    if (error && typeof error === 'object' && 'name' in error && error.name === "AbortError") {
+      throw new ApiError(
+        `La conexión con ${url} ha excedido el tiempo de espera. Verifique que el servidor esté respondiendo.`,
+        0,
+      )
+    }
 
     throw error
   }
@@ -159,7 +185,7 @@ export const documentoApi = {
   },
 }
 
-// Authorization API functions
+// Añadir una función para obtener autorizaciones por documento_id
 export const autorizacionApi = {
   async getAll(): Promise<AutorizacionModel[]> {
     return fetchApi<AutorizacionModel[]>("autorizaciones/")
@@ -180,8 +206,20 @@ export const autorizacionApi = {
   },
 
   async getByDocumentoId(documentoId: number): Promise<AutorizacionModel[]> {
-    const allAutorizaciones = await this.getAll()
-    return allAutorizaciones.filter((auth) => auth.documento_id === documentoId)
+    // Usar el nuevo endpoint específico para obtener autorizaciones por documento_id
+    return fetchApi<AutorizacionModel[]>(`autorizaciones/documento/${documentoId}`)
+  },
+
+  async getByDocumentoIdAndNombre(documentoId: number, nombre: string): Promise<AutorizacionModel | null> {
+    // Usar el nuevo endpoint para obtener una autorización específica por documento_id y nombre
+    try {
+      return fetchApi<AutorizacionModel>(
+        `autorizaciones/documento/${documentoId}/usuario/${encodeURIComponent(nombre)}`,
+      )
+    } catch (error) {
+      console.error(`Error al obtener autorización para documento ${documentoId} y usuario ${nombre}:`, error)
+      return null
+    }
   },
 }
 
@@ -481,5 +519,88 @@ export const documentoCompletoApi = {
         url: link.url,
       })),
     }
+  },
+}
+
+// Digital Signature API functions
+export const digitalSignatureApi = {
+  async signDocument(data: SignatureRequest): Promise<SignatureResponse> {
+    return fetchApi<SignatureResponse>("sign_document/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  },
+
+  async verifySignature(data: {
+    documento_id: number
+    signature: string
+    public_key_pem: string
+  }): Promise<any> {
+    return fetchApi<any>("verify_signature/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  },
+
+  async downloadDocument(linkId: number): Promise<Blob> {
+    const response = await fetch(`${API_BASE_URL}/links/download/${linkId}`)
+    if (!response.ok) {
+      throw new ApiError(`Error downloading document: ${response.statusText}`, response.status)
+    }
+    return response.blob()
+  },
+
+  async getPublicKey(accessId: number): Promise<string> {
+    return fetchApi<string>(`account_access/${accessId}/public_key`)
+  },
+
+  // Nuevas funciones para documentos firmados
+  async getDocumentosFirmados(): Promise<DocumentoFirmado[]> {
+    try {
+      console.log("🌐 Llamando a endpoint: documentos_firmados/")
+      const response = await fetchApi<any>("documentos_firmados/")
+
+      console.log("📡 Respuesta cruda del API:", response)
+
+      // Si la respuesta es directamente un array
+      if (Array.isArray(response)) {
+        console.log("✅ Respuesta es array directo con", response.length, "elementos")
+        return response
+      }
+
+      // Si la respuesta es un objeto que contiene un array
+      if (response && typeof response === "object") {
+        // Buscar propiedades comunes que podrían contener el array
+        const possibleKeys = ["documentos", "files", "data", "items", "results"]
+
+        for (const key of possibleKeys) {
+          if (response[key] && Array.isArray(response[key])) {
+            console.log(`✅ Encontrado array en propiedad '${key}' con`, response[key].length, "elementos")
+            return response[key]
+          }
+        }
+
+        // Si no encontramos un array en las propiedades comunes, buscar cualquier array
+        const arrayValues = Object.values(response).filter(Array.isArray)
+        if (arrayValues.length > 0) {
+          console.log("✅ Encontrado array en respuesta con", arrayValues[0].length, "elementos")
+          return arrayValues[0] as DocumentoFirmado[]
+        }
+      }
+
+      console.warn("⚠️ No se pudo extraer array de la respuesta, devolviendo array vacío")
+      return []
+    } catch (error) {
+      console.error("❌ Error en getDocumentosFirmados:", error)
+      return []
+    }
+  },
+
+  async downloadDocumentoFirmado(filename: string): Promise<Blob> {
+    const response = await fetch(`${API_BASE_URL}/documentos_firmados/${encodeURIComponent(filename)}`)
+    if (!response.ok) {
+      throw new ApiError(`Error downloading signed document: ${response.statusText}`, response.status)
+    }
+    return response.blob()
   },
 }
