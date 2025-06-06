@@ -1,5 +1,5 @@
-const API_BASE_URL = "http://localhost:8000" // Cambia esto a tu URL de API real
-// const API_BASE_URL = "http://172.172.219.21:8000"
+// Cambiar la primera línea para usar explícitamente la dirección IPv4
+const API_BASE_URL = "http://127.0.0.1:8000"
 
 // Types based on the OpenAPI specification
 export interface DocumentoModel {
@@ -72,6 +72,7 @@ class ApiError extends Error {
   }
 }
 
+// Mejorar el manejo de errores en la función fetchApi
 async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint
   const url = `${API_BASE_URL}/${cleanEndpoint}`
@@ -82,7 +83,11 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
   }
 
   try {
-    console.log(`Fetching from: ${url}`) // Para debug
+    console.log(`Fetching from: ${url}`)
+
+    // Agregar un timeout para evitar esperas largas si hay problemas de conexión
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 segundos de timeout
 
     const response = await fetch(url, {
       ...options,
@@ -90,7 +95,10 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
         ...defaultHeaders,
         ...options.headers,
       },
+      signal: controller.signal,
     })
+
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
       let errorMessage = `API Error: ${response.status} ${response.statusText}`
@@ -119,10 +127,12 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
 
     if (error instanceof TypeError && error.message === "Failed to fetch") {
       throw new ApiError(
-        "No se pudo conectar con el servidor API. Verifique que el servidor esté en ejecución y accesible.",
+        `No se pudo conectar con el servidor API en ${url}. Verifique que el servidor esté en ejecución y accesible.`,
         0,
       )
     }
+
+   
 
     throw error
   }

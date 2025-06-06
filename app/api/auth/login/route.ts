@@ -36,7 +36,24 @@ export async function POST(request: NextRequest) {
     } else {
       // 2. Authenticate against /account_details endpoint for other users
       try {
-        const allAccounts = await accountDetailsApi.getAll()
+        // Modificar la parte donde se intenta usar el proxy para usar una URL absoluta
+        // Usar una URL absoluta con la dirección IPv4 explícita
+        const apiUrl = "http://127.0.0.1:8000/account_details"
+        console.log(`Intentando autenticar usando la API directamente: ${apiUrl}`)
+
+        const response = await fetch(apiUrl, {
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+        })
+
+        if (!response.ok) {
+          throw new Error(`Error al conectar con la API: ${response.status} ${response.statusText}`)
+        }
+
+        const allAccounts = await response.json()
+
         const apiUser = allAccounts.find(
           (acc: AccountDetailsResponse) => acc.email.toLowerCase() === email.toLowerCase() && acc.password === password,
         )
@@ -88,11 +105,63 @@ export async function POST(request: NextRequest) {
         }
       } catch (apiError) {
         console.error("API error during authentication:", apiError)
-        // If API is down or there's an error, non-superusers can't log in
-        return NextResponse.json(
-          { success: false, message: "Error de autenticación. Intente más tarde." },
-          { status: 500 },
-        )
+        // Si la API falla, intentar con accountDetailsApi como fallback
+        try {
+          const allAccounts = await accountDetailsApi.getAll()
+          const apiUser = allAccounts.find(
+            (acc: AccountDetailsResponse) =>
+              acc.email.toLowerCase() === email.toLowerCase() && acc.password === password,
+          )
+
+          if (apiUser) {
+            // Mismo código de procesamiento que arriba
+            const userTypes = apiUser.type.includes(",")
+              ? apiUser.type.split(",").map((t) => t.trim().toLowerCase())
+              : [apiUser.type.toLowerCase()]
+
+            const primaryType = userTypes[0] as UserRole
+            let role: UserRole
+
+            if (apiUser.authorizacion) {
+              role = `admin-${primaryType}` as UserRole
+            } else {
+              role = primaryType
+            }
+
+            const validRoles: UserRole[] = [
+              "humanitario",
+              "psicosocial",
+              "legal",
+              "comunicacion",
+              "almacen",
+              "admin-humanitario",
+              "admin-psicosocial",
+              "admin-legal",
+              "admin-comunicacion",
+              "admin-almacen",
+              "superuser",
+            ]
+
+            if (!validRoles.includes(role)) {
+              console.warn(`Invalid role constructed for user ${apiUser.email}: ${role}. Defaulting to base type.`)
+              role = primaryType
+            }
+
+            authenticatedUser = {
+              id: apiUser.id,
+              name: apiUser.name,
+              email: apiUser.email,
+              role: role,
+              types: userTypes,
+            }
+          }
+        } catch (fallbackError) {
+          console.error("Fallback authentication also failed:", fallbackError)
+          return NextResponse.json(
+            { success: false, message: "Error de autenticación. No se pudo conectar con el servidor API." },
+            { status: 500 },
+          )
+        }
       }
     }
 

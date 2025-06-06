@@ -31,10 +31,10 @@ import type { schema } from "@/components/data-table"
 import type { z } from "zod"
 import { useAuth } from "@/contexts/auth-provider"
 import { documentoCompletoApi } from "@/lib/api-service"
+import { accountDetailsApi } from "@/lib/api-service"
+import { autorizacionApi } from "@/lib/api-service"
 
-export default function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = React.use(params)
-  const { id } = resolvedParams
+export default function DocumentPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const { user, isAdmin, userType, isLoading: authLoading } = useAuth()
   const [isLoading, setIsLoading] = React.useState(true)
@@ -83,7 +83,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
       setIsLoading(true)
       try {
         // Intentar obtener los datos del documento desde la API
-        const documentId = Number.parseInt(id)
+        const documentId = Number.parseInt(params.id)
 
         try {
           // Primero intentar obtener el documento de la API
@@ -97,6 +97,53 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
             const hasPermission = checkPermissions(frontendDoc)
 
             if (hasPermission) {
+              // Verificar si ya tiene autorizaciones
+              const hasAuthorizations = frontendDoc.authorizations && frontendDoc.authorizations.length > 0
+
+              // Solo cargar usuarios autorizados si no hay autorizaciones existentes
+              if (!hasAuthorizations) {
+                try {
+                  const allUsers = await accountDetailsApi.getAll()
+                  const authorizedUsers = allUsers.filter(
+                    (user) =>
+                      user.authorizacion === true &&
+                      (user.type.toLowerCase() === frontendDoc.type.toLowerCase() ||
+                        user.type.toLowerCase().includes(frontendDoc.type.toLowerCase())),
+                  )
+
+                  console.log(
+                    `Encontrados ${authorizedUsers.length} usuarios autorizados para tipo ${frontendDoc.type}`,
+                  )
+
+                  // Si no hay autorizaciones, crear autorizaciones con usuarios autorizados
+                  if (authorizedUsers.length > 0) {
+                    frontendDoc.authorizations = authorizedUsers.map((user) => ({
+                      name: user.name,
+                      role: `Autorización ${frontendDoc.type}`,
+                      status: "pending",
+                      date: "",
+                    }))
+
+                    // Guardar estas autorizaciones en la API
+                    for (const user of authorizedUsers) {
+                      try {
+                        await autorizacionApi.create({
+                          documento_id: documentId,
+                          name: user.name,
+                          role: `Autorización ${frontendDoc.type}`,
+                          status: "pending",
+                          date: null,
+                        })
+                      } catch (authError) {
+                        console.error(`Error al crear autorización para usuario ${user.name}:`, authError)
+                      }
+                    }
+                  }
+                } catch (usersError) {
+                  console.error("Error al cargar usuarios autorizados:", usersError)
+                }
+              }
+
               setItem(frontendDoc)
               setEditableFields({
                 header: frontendDoc.header,
@@ -122,13 +169,41 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
         const allData = await response.json()
 
         // Encontrar el elemento con el ID correspondiente
-        const foundItem = allData.find((item: any) => item.id === Number.parseInt(id))
+        const foundItem = allData.find((item: any) => item.id === Number.parseInt(params.id))
 
         if (foundItem) {
           // Verificar permisos
           const hasPermission = checkPermissions(foundItem)
 
           if (hasPermission) {
+            // Verificar si ya tiene autorizaciones
+            const hasAuthorizations = foundItem.authorizations && foundItem.authorizations.length > 0
+
+            // Solo intentar cargar usuarios autorizados si no hay autorizaciones existentes
+            if (!hasAuthorizations) {
+              try {
+                const allUsers = await accountDetailsApi.getAll()
+                const authorizedUsers = allUsers.filter(
+                  (user) =>
+                    user.authorizacion === true &&
+                    (user.type.toLowerCase() === foundItem.type.toLowerCase() ||
+                      user.type.toLowerCase().includes(foundItem.type.toLowerCase())),
+                )
+
+                // Si no hay autorizaciones, crear autorizaciones con usuarios autorizados
+                if (authorizedUsers.length > 0) {
+                  foundItem.authorizations = authorizedUsers.map((user) => ({
+                    name: user.name,
+                    role: `Autorización ${foundItem.type}`,
+                    status: "pending",
+                    date: "",
+                  }))
+                }
+              } catch (usersError) {
+                console.error("Error al cargar usuarios autorizados:", usersError)
+              }
+            }
+
             setItem(foundItem)
             setEditableFields({
               header: foundItem.header,
@@ -156,7 +231,7 @@ export default function DocumentPage({ params }: { params: Promise<{ id: string 
     }
 
     loadData()
-  }, [id, router, user, userType, authLoading])
+  }, [params.id, router, user, userType, authLoading])
 
   // Manejar el guardado de cambios
   const handleSave = async () => {
