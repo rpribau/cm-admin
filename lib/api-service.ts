@@ -1,5 +1,5 @@
 // Cambiar la primera línea para usar explícitamente la dirección IPv4
-const API_BASE_URL = "http://127.0.0.1:8000"
+const API_BASE_URL = "http://172.172.219.21:8000"
 
 // Types based on the OpenAPI specification
 export interface DocumentoModel {
