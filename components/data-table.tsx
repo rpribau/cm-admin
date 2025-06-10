@@ -139,9 +139,33 @@ export function DataTable({
   const [data, setData] = React.useState(() => {
     // Filtrar los datos según los tipos de usuario
     if (user && userTypes.length > 0 && !isSuperuser) {
-      return initialData.filter((item) =>
-        userTypes.some((userType) => item.type.toLowerCase() === userType.toLowerCase()),
-      )
+      console.log(`Filtrando datos iniciales para userTypes: ${userTypes.join(", ")}`)
+
+      const normalizeText = (text: string) => {
+        return text
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/ñ/g, "n")
+      }
+
+      const filteredData = initialData.filter((item) => {
+        const matchesType = userTypes.some((userType) => {
+          if (userType === "todos") return true
+
+          const normalizedUserType = normalizeText(userType)
+          const normalizedItemType = normalizeText(item.type)
+          const matches = normalizedItemType.includes(normalizedUserType)
+
+          console.log(`Item: ${item.header}, Tipo: ${item.type}, UserType: ${userType}, Match: ${matches}`)
+          return matches
+        })
+
+        return matchesType
+      })
+
+      console.log(`Datos iniciales filtrados: ${filteredData.length} de ${initialData.length}`)
+      return filteredData
     }
     return initialData
   })
@@ -470,7 +494,30 @@ export function DataTable({
   // Filter data based on the selected tab
   const getFilteredData = (tabValue: string) => {
     if (tabValue === "todos") return data
-    return data.filter((item) => item.type.toLowerCase() === tabValue.toLowerCase())
+
+    // Función para normalizar texto (quitar acentos y convertir a minúsculas)
+    const normalizeText = (text: string) => {
+      return text
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // Quitar acentos
+        .replace(/ñ/g, "n")
+    }
+
+    const normalizedTabValue = normalizeText(tabValue)
+
+    const filteredData = data.filter((item) => {
+      const normalizedItemType = normalizeText(item.type)
+      const matches = normalizedItemType.includes(normalizedTabValue)
+
+      console.log(
+        `Filtro: tab="${tabValue}" (${normalizedTabValue}), item="${item.type}" (${normalizedItemType}), match=${matches}`,
+      )
+      return matches
+    })
+
+    console.log(`Datos filtrados para ${tabValue}: ${filteredData.length} elementos`)
+    return filteredData
   }
 
   // Determine which tabs to show based on user types

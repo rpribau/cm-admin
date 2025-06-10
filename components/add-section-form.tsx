@@ -41,7 +41,7 @@ interface AddSectionFormProps {
 }
 
 export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps) {
-  const { userType } = useAuth()
+  const { userType, user, isSuperuser } = useAuth()
   const [formData, setFormData] = React.useState<FormData>({
     header: "",
     type: userType ? userType.charAt(0).toUpperCase() + userType.slice(1) : "Humanitario",
@@ -58,6 +58,27 @@ export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps)
 
   const [reviewers, setReviewers] = React.useState<AccountDetailsResponse[]>([])
   const [loadingReviewers, setLoadingReviewers] = React.useState(true)
+
+  React.useEffect(() => {
+    if (userType) {
+      // Normalizar el tipo según el userType
+      let normalizedType = userType.charAt(0).toUpperCase() + userType.slice(1)
+
+      // Manejar casos especiales como "comunicacion" -> "Comunicación"
+      if (normalizedType.toLowerCase() === "comunicacion") {
+        normalizedType = "Comunicación"
+      } else if (normalizedType.toLowerCase() === "almacen") {
+        normalizedType = "Almacén"
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        type: normalizedType,
+      }))
+
+      console.log(`Tipo de documento establecido automáticamente: ${normalizedType} basado en userType: ${userType}`)
+    }
+  }, [userType])
 
   React.useEffect(() => {
     const fetchReviewers = async () => {
@@ -129,6 +150,10 @@ export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps)
       )
 
       console.log(`Encontrados ${authorizedUsers.length} usuarios autorizados para tipo ${updatedFormData.type}`)
+
+      // Antes de crear el documento
+      console.log(`Creando documento con tipo: ${updatedFormData.type}`)
+      console.log(`Usuario actual: ${user?.name}, Tipo: ${userType}`)
 
       // Si hay archivos, usar el endpoint de subir documento
       if (updatedFormData.files && updatedFormData.files.length > 0) {
@@ -253,6 +278,7 @@ export function AddSectionForm({ onAddSection, onSuccess }: AddSectionFormProps)
         <Select
           value={formData.type}
           onValueChange={(value) => setFormData({ ...formData, type: value, reviewer: "Asignar revisor" })}
+          disabled={userType !== "todos" && !isSuperuser}
           required
         >
           <SelectTrigger id="type">
