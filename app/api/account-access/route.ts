@@ -4,8 +4,8 @@ export async function GET(request: NextRequest) {
   try {
     console.log("🔍 Obteniendo datos de account_access...")
 
-    // Llamar al endpoint de la API
-    const response = await fetch("http://127.0.0.1:8000/account_access/", {
+    // Llamar al endpoint de la API externa
+    const response = await fetch("http://4.157.251.39:8000/account_access/", {
       method: "GET",
       headers: {
         "Content-Type": "application/json",

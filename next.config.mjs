@@ -13,7 +13,7 @@ const nextConfig = {
     return [
       {
         source: '/api-proxy/:path*',
-        destination: 'http://127.0.0.1:8000/:path*', // Proxy to Backend usando IPv4
+        destination: 'http://4.157.251.39:8000/:path*', // Actualizar a la nueva IP
       },
     ]
   },

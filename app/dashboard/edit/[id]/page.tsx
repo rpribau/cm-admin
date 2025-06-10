@@ -16,9 +16,9 @@ import {
   Trash2Icon,
   XCircleIcon,
   ShieldIcon,
-  UploadIcon,
   FileIcon,
   DownloadIcon,
+  AlertTriangleIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -30,7 +30,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -39,12 +38,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import type { schema } from "@/components/data-table"
 import type { z } from "zod"
 import { useAuth } from "@/contexts/auth-provider"
-import { documentoCompletoApi, digitalSignatureApi, type DocumentoFirmado } from "@/lib/api-service"
+import {
+  documentoCompletoApi,
+  digitalSignatureApi,
+  firmaDocumentoApi,
+  type FirmaDocumentoModel,
+} from "@/lib/api-service"
 import { accountDetailsApi } from "@/lib/api-service"
 import { autorizacionApi } from "@/lib/api-service"
+import { documentoApi } from "@/lib/api-service"
+import type { AutorizacionModel, DocumentoModel } from "@/lib/api-service"
+import { accountAccessApi } from "@/lib/api-service"
 
 export default function DocumentPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -75,15 +83,13 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
   const [newLink, setNewLink] = React.useState({ title: "", url: "" })
   const [showNewLinkForm, setShowNewLinkForm] = React.useState(false)
 
-  // Estados para firma digital
+  // Estados para firma digital (simplificados)
   const [signingDocument, setSigningDocument] = React.useState(false)
-  const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const [showSignDialog, setShowSignDialog] = React.useState(false)
   const [currentAuthIndex, setCurrentAuthIndex] = React.useState<number | null>(null)
-  const [dragActive, setDragActive] = React.useState(false)
 
-  // Estado para documentos firmados
-  const [documentosFirmados, setDocumentosFirmados] = React.useState<DocumentoFirmado[]>([])
+  // Estado para documentos firmados (ahora desde /firma_documentos/)
+  const [documentosFirmados, setDocumentosFirmados] = React.useState<FirmaDocumentoModel[]>([])
   const [loadingDocumentosFirmados, setLoadingDocumentosFirmados] = React.useState(false)
 
   // Función para calcular el estado del documento basado en autorizaciones
@@ -131,80 +137,6 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
     return true
   }
 
-  // Función para limpiar duplicados existentes
-  const cleanupDuplicateAuthorizations = async (documentId: number) => {
-    try {
-      console.log(`🧹 Limpiando duplicados para documento ${documentId}`)
-      const allAuths = await autorizacionApi.getByDocumentoId(documentId)
-
-      if (!allAuths || allAuths.length === 0) {
-        console.log("✅ No hay autorizaciones para limpiar")
-        return []
-      }
-
-      // Agrupar por nombre para encontrar duplicados
-      const authsByName = new Map()
-      const duplicatesToDelete = []
-
-      for (const auth of allAuths) {
-        const key = `${auth.name}-${auth.role}`
-
-        if (authsByName.has(key)) {
-          // Es un duplicado, marcarlo para eliminación
-          // Mantener el que tenga un estado diferente a "pending" o el más reciente
-          const existing = authsByName.get(key)
-
-          if (existing.status === "pending" && auth.status !== "pending") {
-            // El nuevo tiene un estado más avanzado, eliminar el existente
-            duplicatesToDelete.push(existing)
-            authsByName.set(key, auth)
-          } else if (auth.status === "pending" && existing.status !== "pending") {
-            // El existente tiene un estado más avanzado, eliminar el nuevo
-            duplicatesToDelete.push(auth)
-          } else {
-            // Ambos tienen el mismo tipo de estado, mantener el que tenga ID menor (más antiguo)
-            if (auth.id && existing.id && auth.id > existing.id) {
-              duplicatesToDelete.push(auth)
-            } else {
-              duplicatesToDelete.push(existing)
-              authsByName.set(key, auth)
-            }
-          }
-        } else {
-          authsByName.set(key, auth)
-        }
-      }
-
-      // Eliminar duplicados
-      if (duplicatesToDelete.length > 0) {
-        console.log(
-          `🗑️ Eliminando ${duplicatesToDelete.length} duplicados:`,
-          duplicatesToDelete.map((d) => `${d.name} (ID: ${d.id})`),
-        )
-
-        for (const duplicate of duplicatesToDelete) {
-          try {
-            // Nota: Necesitarías implementar un endpoint DELETE en tu API
-            // Por ahora, solo logueamos lo que se debería eliminar
-            console.log(`❌ Debería eliminar: ${duplicate.name} (ID: ${duplicate.id})`)
-            // await autorizacionApi.delete(duplicate.id)
-          } catch (error) {
-            console.error(`Error eliminando duplicado ${duplicate.id}:`, error)
-          }
-        }
-      }
-
-      // Retornar las autorizaciones únicas
-      const uniqueAuths = Array.from(authsByName.values())
-      console.log(`✅ Autorizaciones únicas después de limpieza: ${uniqueAuths.length}`)
-
-      return uniqueAuths
-    } catch (error) {
-      console.error("❌ Error limpiando duplicados:", error)
-      return []
-    }
-  }
-
   // Función mejorada para cargar autorizaciones sin duplicaciones
   const loadAuthorizationsForDocument = async (documentId: number, documentType: string) => {
     // Prevenir múltiples ejecuciones simultáneas
@@ -216,29 +148,67 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
     // Verificar si ya se procesaron las autorizaciones para este documento
     if (authorizationsProcessed && documentIdRef.current === documentId) {
       console.log("✅ Autorizaciones ya procesadas para este documento")
-      const existingAuths = await autorizacionApi.getByDocumentoId(documentId)
-      return existingAuths.map((auth) => ({
-        name: auth.name,
-        role: auth.role,
-        status: auth.status || "pending",
-        date: auth.date || "",
-      }))
+      try {
+        // Obtener directamente del endpoint específico para este documento
+        const existingAuths = await autorizacionApi.getByDocumentoId(documentId)
+        console.log(`📋 Autorizaciones obtenidas para documento ${documentId}:`, existingAuths.length)
+
+        return existingAuths.map((auth) => ({
+          name: auth.name,
+          role: auth.role,
+          status: auth.status || "pending",
+          date: auth.date || "",
+        }))
+      } catch (error) {
+        console.error(`❌ Error al obtener autorizaciones para documento ${documentId}:`, error)
+        return []
+      }
     }
 
     setIsProcessingAuthorizations(true)
 
     try {
-      console.log(`🔍 Cargando autorizaciones para documento ${documentId}`)
+      console.log(`🔍 Cargando autorizaciones para documento ${documentId} desde API`)
 
-      // Primero limpiar duplicados existentes
-      const cleanedAuths = await cleanupDuplicateAuthorizations(documentId)
+      // Intentar obtener autorizaciones existentes para este documento
+      let existingAuths = []
+      try {
+        existingAuths = await autorizacionApi.getByDocumentoId(documentId)
+        console.log(`📋 Autorizaciones existentes para documento ${documentId}:`, existingAuths.length)
+      } catch (error) {
+        console.error(`❌ Error al obtener autorizaciones existentes para documento ${documentId}:`, error)
+        existingAuths = []
+      }
 
-      if (cleanedAuths.length > 0) {
-        console.log(`✅ Usando ${cleanedAuths.length} autorizaciones existentes (después de limpieza)`)
+      // Si hay autorizaciones existentes, limpiar duplicados y devolverlas
+      if (existingAuths.length > 0) {
+        // Eliminar duplicados por nombre
+        const uniqueAuthsMap = new Map()
+        existingAuths.forEach((auth) => {
+          const key = auth.name
+          // Si ya existe, mantener la que tenga un estado diferente a "pending" o la más reciente
+          if (uniqueAuthsMap.has(key)) {
+            const existing = uniqueAuthsMap.get(key)
+            if (existing.status === "pending" && auth.status !== "pending") {
+              uniqueAuthsMap.set(key, auth)
+            } else if (auth.status === "pending" && existing.status !== "pending") {
+              // Mantener la existente
+            } else if (auth.id && existing.id && auth.id > existing.id) {
+              // Si ambas tienen el mismo estado, mantener la más reciente (ID mayor)
+              uniqueAuthsMap.set(key, auth)
+            }
+          } else {
+            uniqueAuthsMap.set(key, auth)
+          }
+        })
+
+        const uniqueAuths = Array.from(uniqueAuthsMap.values())
+        console.log(`✅ Autorizaciones únicas después de limpieza: ${uniqueAuths.length}`)
+
         setAuthorizationsProcessed(true)
         documentIdRef.current = documentId
 
-        return cleanedAuths.map((auth) => ({
+        return uniqueAuths.map((auth) => ({
           name: auth.name,
           role: auth.role,
           status: auth.status || "pending",
@@ -247,7 +217,9 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
       }
 
       // Si no hay autorizaciones existentes, crear nuevas (solo una vez)
-      console.log(`📝 Creando nuevas autorizaciones para documento ${documentId}`)
+      console.log(`📝 No se encontraron autorizaciones existentes. Creando nuevas para documento ${documentId}`)
+
+      // Obtener usuarios autorizados para este tipo de documento
       const allUsers = await accountDetailsApi.getAll()
       const authorizedUsers = allUsers.filter(
         (user) =>
@@ -260,14 +232,25 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
 
       if (authorizedUsers.length > 0) {
         const newAuthorizations = []
+        const processedNames = new Set() // Para evitar duplicados
 
         // Crear autorizaciones una por una para evitar condiciones de carrera
         for (const user of authorizedUsers) {
           try {
+            // Evitar duplicados por nombre
+            if (processedNames.has(user.name)) {
+              console.log(`⚠️ Usuario ${user.name} ya procesado, saltando...`)
+              continue
+            }
+
+            processedNames.add(user.name)
+
             // Verificar una vez más que no existe antes de crear
             const existingAuth = await autorizacionApi.getByDocumentoIdAndNombre(documentId, user.name)
 
             if (!existingAuth) {
+              console.log(`📝 Creando autorización para ${user.name} en documento ${documentId}`)
+
               const createdAuth = await autorizacionApi.create({
                 documento_id: documentId,
                 name: user.name,
@@ -285,7 +268,7 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
 
               console.log(`✅ Autorización creada para ${user.name} en documento ${documentId}`)
             } else {
-              console.log(`⚠️ Autorización ya existe para ${user.name}, saltando creación`)
+              console.log(`⚠️ Autorización ya existe para ${user.name}, usando la existente`)
               newAuthorizations.push({
                 name: existingAuth.name,
                 role: existingAuth.role,
@@ -294,7 +277,7 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
               })
             }
           } catch (authError) {
-            console.error(`❌ Error al crear autorización para usuario ${user.name}:`, authError)
+            console.error(`❌ Error al procesar autorización para usuario ${user.name}:`, authError)
           }
         }
 
@@ -314,111 +297,33 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
     }
   }
 
-  // Cargar documentos firmados relacionados con este documento
+  // Cargar TODOS los documentos firmados para este documento (de todos los usuarios)
   const loadDocumentosFirmados = async () => {
     if (!item) return
 
     setLoadingDocumentosFirmados(true)
     try {
-      console.log("🔍 Cargando documentos firmados para documento ID:", item.id)
-      const allDocumentosFirmados = await digitalSignatureApi.getDocumentosFirmados()
+      console.log("🔍 Cargando TODOS los documentos firmados para documento ID:", item.id)
 
-      console.log("📄 Respuesta completa de documentos firmados:", allDocumentosFirmados)
-      console.log("📄 Tipo de respuesta:", typeof allDocumentosFirmados)
-      console.log("📄 Es array:", Array.isArray(allDocumentosFirmados))
+      // Obtener todas las firmas de documentos
+      const allFirmasDocumentos = await firmaDocumentoApi.getAll()
+      console.log(`📄 Total de firmas en el sistema: ${allFirmasDocumentos.length}`)
 
-      // Verificar que la respuesta sea un array
-      if (!Array.isArray(allDocumentosFirmados)) {
-        console.warn("⚠️ La respuesta no es un array:", typeof allDocumentosFirmados, allDocumentosFirmados)
+      // Filtrar las firmas que corresponden a este documento (de TODOS los usuarios)
+      const firmasDeEsteDocumento = allFirmasDocumentos.filter((firma) => firma.id_documentos === item.id)
 
-        // Si la respuesta tiene una propiedad que contiene el array, usarla
-        if (allDocumentosFirmados && typeof allDocumentosFirmados === "object") {
-          // Buscar propiedades que podrían contener el array
-          const possibleArrays = Object.values(allDocumentosFirmados).filter(Array.isArray)
-          if (possibleArrays.length > 0) {
-            console.log("✅ Encontrado array en la respuesta:", possibleArrays[0])
-            setDocumentosFirmados(possibleArrays[0] as DocumentoFirmado[])
-            return
-          }
-        }
+      console.log(`✅ Firmas encontradas para documento ${item.id}: ${firmasDeEsteDocumento.length}`)
 
-        // Si no es un array válido, usar array vacío
-        console.log("❌ No se pudo procesar la respuesta, usando array vacío")
-        setDocumentosFirmados([])
-        return
-      }
-
-      console.log(`📋 Total de documentos firmados encontrados: ${allDocumentosFirmados.length}`)
-
-      // Mostrar todos los archivos para debugging
-      allDocumentosFirmados.forEach((doc, index) => {
-        console.log(`📄 Archivo ${index + 1}:`, doc.filename || doc)
+      // Mostrar detalles de cada firma para debugging
+      firmasDeEsteDocumento.forEach((firma, index) => {
+        console.log(`   Firma ${index + 1}: ID=${firma.id}, URL=${firma.url_firma}`)
       })
 
-      // Filtrar documentos relacionados con este documento
-      const documentId = item.id.toString()
-      console.log(`🔍 Buscando documentos para documento ID: ${documentId}`)
-
-      const filteredDocumentos = allDocumentosFirmados.filter((doc) => {
-        const filename = doc.filename || doc
-
-        // Patrones de búsqueda más amplios basados en el formato real
-        const patterns = [
-          `_${documentId}_`, // formato: original-Usuario_43_fecha.pdf
-          `-${documentId}_`, // formato: original-Usuario-43_fecha.pdf
-          `documento_${documentId}`, // formato: documento_43_...
-          `doc${documentId}`, // formato: doc43_...
-          `id${documentId}`, // formato: id43_...
-          `${documentId}.pdf`, // formato: ...43.pdf
-          `${documentId}_`, // formato: ...43_...
-        ]
-
-        const matchesAny = patterns.some((pattern) => filename.includes(pattern))
-
-        console.log(`📋 Archivo: ${filename}`)
-        console.log(`   - Patrones probados: ${patterns.join(", ")}`)
-        console.log(`   - Coincide: ${matchesAny}`)
-
-        return matchesAny
-      })
-
-      console.log(`✅ Documentos filtrados para documento ${documentId}: ${filteredDocumentos.length}`)
-
-      if (filteredDocumentos.length === 0) {
-        console.log("🔍 No se encontraron coincidencias. Mostrando todos los documentos para debugging:")
-        allDocumentosFirmados.forEach((doc, index) => {
-          console.log(`   ${index + 1}. ${doc.filename || doc}`)
-        })
-
-        // Para debugging, también mostrar documentos que contengan cualquier número
-        const anyNumberDocs = allDocumentosFirmados.filter((doc) => {
-          const filename = doc.filename || doc
-          return /\d+/.test(filename) // Cualquier archivo que contenga números
-        })
-
-        console.log(`🔍 Documentos con números (para debugging): ${anyNumberDocs.length}`)
-        anyNumberDocs.forEach((doc, index) => {
-          console.log(`   ${index + 1}. ${doc.filename || doc}`)
-        })
-      }
-
-      setDocumentosFirmados(filteredDocumentos)
+      setDocumentosFirmados(firmasDeEsteDocumento)
     } catch (error) {
       console.error("❌ Error al cargar documentos firmados:", error)
-
-      // Mostrar más detalles del error
-      if (error instanceof Error) {
-        console.error("Error message:", error.message)
-        console.error("Error stack:", error.stack)
-      }
-
-      // En caso de error, usar array vacío
       setDocumentosFirmados([])
-
-      // Mostrar toast de error para debugging
-      toast.error(
-        `Error al cargar documentos firmados: ${error instanceof Error ? error.message : "Error desconocido"}`,
-      )
+      toast.error("Error al cargar los documentos firmados")
     } finally {
       setLoadingDocumentosFirmados(false)
     }
@@ -427,8 +332,8 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
   // Función para probar manualmente el endpoint
   const testDocumentosFirmadosEndpoint = async () => {
     try {
-      console.log("🧪 Probando endpoint manualmente...")
-      const response = await fetch("http://127.0.0.1:8000/documentos_firmados/")
+      console.log("🧪 Probando endpoint /firma_documentos/...")
+      const response = await fetch("http://4.157.251.39:8000/firma_documentos/")
       console.log("🧪 Status:", response.status)
       console.log("🧪 Headers:", Object.fromEntries(response.headers.entries()))
 
@@ -442,22 +347,37 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
         data.forEach((item, index) => {
           console.log(`   ${index + 1}.`, item)
         })
+
+        // Filtrar por documento actual si existe
+        if (item) {
+          const firmasDelDocumento = data.filter((firma: any) => firma.id_documentos === item.id)
+          console.log(`🧪 Firmas para documento ${item.id}:`, firmasDelDocumento.length)
+        }
       }
     } catch (error) {
       console.error("🧪 Error en prueba manual:", error)
     }
   }
 
-  // Descargar documento firmado
-  const handleDownloadSignedDocument = async (filename: string) => {
+  // Descargar documento firmado (desde URL de firma)
+  const handleDownloadSignedDocument = async (firmaUrl: string, firmaId: number) => {
     try {
-      const blob = await digitalSignatureApi.downloadDocumentoFirmado(filename)
+      console.log(`📥 Descargando documento firmado desde: ${firmaUrl}`)
+
+      // Intentar descargar directamente desde la URL
+      const response = await fetch(firmaUrl)
+
+      if (!response.ok) {
+        throw new Error(`Error al descargar: ${response.status} ${response.statusText}`)
+      }
+
+      const blob = await response.blob()
 
       // Crear un enlace temporal para descargar el archivo
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = filename
+      a.download = `documento_firmado_${item?.id}_${firmaId}.pdf`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -521,6 +441,7 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
 
             // Cargar documentos firmados relacionados
             loadDocumentosFirmados()
+
             return
           }
         }
@@ -685,13 +606,16 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
     }
   }
 
-  // Manejar cambios en el estado de autorización
+  // Manejar cambios en el estado de autorización (MEJORADO)
   const handleAuthStatusChange = async (index: number, status: "approved" | "rejected" | "pending") => {
     if (!item || !item.authorizations) return
 
     try {
       const updatedAuths = [...item.authorizations]
       const authToUpdate = updatedAuths[index]
+
+      console.log(`🔄 Iniciando actualización de autorización para ${authToUpdate.name} a estado: ${status}`)
+      console.log(`📋 Datos actuales de la autorización:`, authToUpdate)
 
       updatedAuths[index] = {
         ...authToUpdate,
@@ -717,54 +641,67 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
         status: newDocumentStatus,
       }))
 
-      // Buscar la autorización específica en la API usando el nuevo endpoint
-      if (user) {
-        try {
-          // Intentar obtener la autorización específica por documento_id y nombre
-          const authorizacion = await autorizacionApi.getByDocumentoIdAndNombre(item.id, authToUpdate.name)
+      // IMPORTANTE: Actualizar el estado en la API de autorizaciones
+      console.log(`🔄 Actualizando autorización para ${authToUpdate.name} a estado: ${status}`)
 
-          if (authorizacion) {
-            // Actualizar la autorización en la API
-            await autorizacionApi.update({
-              id: authorizacion.id,
-              documento_id: item.id,
-              name: authToUpdate.name,
-              role: authToUpdate.role,
-              status,
-              date: status !== "pending" ? new Date().toISOString().split("T")[0] : null,
-            })
+      try {
+        // Intentar obtener la autorización específica por documento_id y nombre
+        console.log(`🔍 Buscando autorización para documento ${item.id} y usuario ${authToUpdate.name}`)
+        const authorizacion = await autorizacionApi.getByDocumentoIdAndNombre(item.id, authToUpdate.name)
+        console.log(`📋 Autorización encontrada:`, authorizacion)
 
-            console.log(`Autorización actualizada para ${authToUpdate.name} en documento ${item.id}`)
-          } else {
-            console.log(`No se encontró autorización para ${authToUpdate.name} en documento ${item.id}, creando nueva`)
-
-            // Si no existe, crear una nueva autorización
-            await autorizacionApi.create({
-              documento_id: item.id,
-              name: authToUpdate.name,
-              role: authToUpdate.role,
-              status,
-              date: status !== "pending" ? new Date().toISOString().split("T")[0] : null,
-            })
-          }
-
-          // Actualizar el estado del documento en la API
-          const apiDocument = documentoCompletoApi.mapToApiFormat(updatedItem)
-          await documentoCompletoApi.update(apiDocument)
-          console.log(`Estado del documento actualizado a: ${newDocumentStatus}`)
-        } catch (error) {
-          console.error(`Error al actualizar autorización para ${authToUpdate.name}:`, error)
-
-          // Plan de respaldo: actualizar usando el método tradicional
-          await autorizacionApi.update({
-            id: null,
+        if (authorizacion) {
+          // Actualizar la autorización en la API usando PUT con el formato correcto
+          const authToUpdate_API: AutorizacionModel = {
+            id: authorizacion.id,
             documento_id: item.id,
             name: authToUpdate.name,
             role: authToUpdate.role,
             status,
             date: status !== "pending" ? new Date().toISOString().split("T")[0] : null,
-          })
+          }
+
+          console.log(`📤 Enviando autorización actualizada:`, authToUpdate_API)
+          const updatedAuth = await autorizacionApi.update(authToUpdate_API)
+          console.log(`✅ Autorización actualizada para ${authToUpdate.name}:`, updatedAuth)
+        } else {
+          console.log(`📝 No se encontró autorización para ${authToUpdate.name}, creando nueva`)
+
+          // Si no existe, crear una nueva autorización
+          const newAuth: AutorizacionModel = {
+            documento_id: item.id,
+            name: authToUpdate.name,
+            role: authToUpdate.role,
+            status,
+            date: status !== "pending" ? new Date().toISOString().split("T")[0] : null,
+          }
+
+          console.log(`📤 Creando nueva autorización:`, newAuth)
+          const createdAuth = await autorizacionApi.create(newAuth)
+          console.log(`✅ Nueva autorización creada:`, createdAuth)
         }
+
+        // IMPORTANTE: Actualizar también el estado del documento usando PUT /documentos/
+        console.log(`🔄 Actualizando estado del documento a: ${newDocumentStatus}`)
+
+        const documentoToUpdate: DocumentoModel = {
+          id: item.id,
+          header: item.header,
+          type: item.type || null,
+          status: newDocumentStatus, // Usar el nuevo estado calculado
+          target: item.target ? Number.parseInt(item.target.toString()) : null,
+          limit: item.limit ? Number.parseInt(item.limit.toString()) : null,
+          limit_date: item.limit_date,
+          reviewer: item.reviewer || null,
+          description: item.description || null,
+        }
+
+        console.log(`📤 Enviando documento actualizado:`, documentoToUpdate)
+        const updatedDocument = await documentoApi.update(documentoToUpdate)
+        console.log(`✅ Estado del documento actualizado:`, updatedDocument)
+      } catch (error) {
+        console.error(`❌ Error al actualizar autorización para ${authToUpdate.name}:`, error)
+        throw error // Re-lanzar el error para que se maneje abajo
       }
 
       toast.success(
@@ -773,754 +710,684 @@ export default function DocumentPage({ params }: { params: { id: string } }) {
 
       // Si se aprobó o rechazó, actualizar la lista de documentos firmados
       if (status === "approved" || status === "rejected") {
-        loadDocumentosFirmados()
+        // Esperar un poco antes de recargar para que la API procese la firma
+        setTimeout(() => {
+          loadDocumentosFirmados()
+        }, 2000)
       }
     } catch (error) {
-      console.error("Error al actualizar autorización:", error)
+      console.error("❌ Error al actualizar autorización:", error)
       toast.error("Error al actualizar la autorización")
     }
   }
 
-  // Función para manejar la subida del archivo .pem
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      if (file.name.endsWith(".pem") || file.type === "application/x-pem-file" || file.type === "") {
-        setSelectedFile(file)
-        toast.success(`Archivo ${file.name} seleccionado`)
-      } else {
-        toast.error("Por favor selecciona un archivo .pem válido")
-        event.target.value = ""
-      }
-    }
-  }
-
-  // Función para manejar drag and drop
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true)
-    } else if (e.type === "dragleave") {
-      setDragActive(false)
-    }
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0]
-      if (file.name.endsWith(".pem")) {
-        setSelectedFile(file)
-        toast.success(`Archivo ${file.name} seleccionado`)
-      } else {
-        toast.error("Por favor selecciona un archivo .pem válido")
-      }
-    }
-  }
-
-  // Función para firmar el documento
+  // Función simplificada para firmar el documento (sin subida de archivos)
   const handleSignDocument = async () => {
-    if (!item || !selectedFile || !user || currentAuthIndex === null) return
+    if (!item || !user || currentAuthIndex === null) return
 
     setSigningDocument(true)
     try {
-      // Leer el contenido del archivo .pem
-      const fileContent = await selectedFile.text()
+      console.log("🔐 Iniciando proceso de firma digital para usuario:", user.name)
 
-      // Buscar el account_access_id del usuario actual
-      const accountAccessResponse = await fetch("/api/account-access")
-      const accountAccessData = await accountAccessResponse.json()
+      // Obtener todos los account_access para debugging
+      const allAccessData = await accountAccessApi.getAll()
+      console.log("📋 Todos los account_access disponibles:", allAccessData)
 
-      // Encontrar el acceso del usuario actual basado en el nombre
-      const userAccess = accountAccessData.find(
-        (access: any) => access.signer_name === user.name || access.signer_name.includes(user.name.split(" ")[0]),
-      )
+      // Buscar el account_access del usuario actual con la nueva función
+      const userAccess = await accountAccessApi.getByUserName(user.name)
 
       if (!userAccess) {
-        toast.error("No se encontró acceso de firma digital para tu usuario")
+        console.error(`❌ No se encontró acceso de firma digital para ${user.name}`)
+        toast.error(`No se encontró acceso de firma digital para ${user.name}. Contacte al administrador.`)
         return
       }
 
-      console.log("🔐 Iniciando proceso de firma digital...")
+      console.log("🔑 Usando Access ID:", userAccess.id, "para usuario:", user.name)
       console.log("📄 Documento ID:", item.id)
-      console.log("👤 Usuario:", user.name)
-      console.log("🔑 Access ID:", userAccess.id)
 
-      // Llamar al endpoint de firma
-      const signResponse = await fetch("/api/sign-document", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          account_access_id: userAccess.id,
-          documento_id: item.id,
-          public_key_pem: fileContent,
-        }),
+      // Llamar al endpoint de firma automatizada
+      console.log("📤 Enviando solicitud de firma con:", {
+        account_access_id: userAccess.id,
+        documento_id: item.id,
       })
 
-      if (!signResponse.ok) {
-        const errorData = await signResponse.json()
-        throw new Error(errorData.message || "Error al firmar el documento")
-      }
+      const signResponse = await digitalSignatureApi.signDocument({
+        account_access_id: userAccess.id,
+        documento_id: item.id,
+      })
 
-      const signatureResult = await signResponse.json()
-      console.log("✅ Documento firmado exitosamente:", signatureResult)
+      console.log("✅ Respuesta de firma:", signResponse)
 
-      // Actualizar el estado de la autorización a "approved"
+      // IMPORTANTE: Actualizar el estado de la autorización a "approved" en la API
+      console.log("🔄 Actualizando autorización después de firmar...")
       await handleAuthStatusChange(currentAuthIndex, "approved")
+
+      // Esperar un poco más para que la API procese todos los cambios
+      setTimeout(() => {
+        loadDocumentosFirmados()
+        // También recargar las autorizaciones para ver el cambio
+        loadData()
+      }, 3000)
 
       // Cerrar el dialog y limpiar estados
       setShowSignDialog(false)
-      setSelectedFile(null)
       setCurrentAuthIndex(null)
 
-      // Actualizar la lista de documentos firmados después de un pequeño delay
-      setTimeout(() => {
-        loadDocumentosFirmados()
-      }, 1000)
-
-      toast.success("🎉 Documento firmado exitosamente")
+      toast.success("Documento firmado exitosamente y autorización actualizada")
     } catch (error) {
       console.error("❌ Error al firmar documento:", error)
-      toast.error(`Error al firmar el documento: ${error instanceof Error ? error.message : "Error desconocido"}`)
+      toast.error(error instanceof Error ? error.message : "Error al firmar el documento")
     } finally {
       setSigningDocument(false)
     }
   }
 
-  // Función para iniciar el proceso de firma
-  const startSigningProcess = (authIndex: number) => {
+  // Función para rechazar directamente (sin firmar)
+  const handleRejectDocument = async (authIndex: number) => {
+    if (!item || !user) return
+
+    try {
+      console.log("❌ Rechazando documento para usuario:", user.name)
+
+      // Actualizar el estado de la autorización a "rejected"
+      await handleAuthStatusChange(authIndex, "rejected")
+
+      toast.success("Documento rechazado correctamente")
+    } catch (error) {
+      console.error("❌ Error al rechazar documento:", error)
+      toast.error("Error al rechazar el documento")
+    }
+  }
+
+  // Función para abrir el dialog de firma
+  const openSignDialog = (authIndex: number) => {
     setCurrentAuthIndex(authIndex)
     setShowSignDialog(true)
-    setSelectedFile(null)
   }
 
-  // Función para verificar si el usuario actual puede modificar una autorización específica
-  const canModifyAuthorization = (authName: string) => {
-    if (!user) return false
-
-    // El usuario solo puede modificar su propia autorización
-    return user.name === authName || authName.includes(user.name.split(" ")[0])
-  }
-
-  // Renderizar el estado con el icono correspondiente
-  const renderStatus = (status: string) => {
-    switch (status) {
-      case "Completado":
-        return (
-          <Badge
-            variant="outline"
-            className="flex items-center gap-1 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
-          >
-            <CheckCircle2Icon className="h-3.5 w-3.5" />
-            {status}
-          </Badge>
-        )
-      case "En Proceso":
-        return (
-          <Badge
-            variant="outline"
-            className="flex items-center gap-1 bg-yellow-50 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300"
-          >
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            {status}
-          </Badge>
-        )
-      case "No Iniciado":
-        return (
-          <Badge
-            variant="outline"
-            className="flex items-center gap-1 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
-          >
-            <AlertCircleIcon className="h-3.5 w-3.5" />
-            {status}
-          </Badge>
-        )
-      case "Rechazado":
-        return (
-          <Badge
-            variant="outline"
-            className="flex items-center gap-1 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
-          >
-            <XCircleIcon className="h-3.5 w-3.5" />
-            {status}
-          </Badge>
-        )
-      default:
-        return status
-    }
-  }
-
-  // Renderizar el estado de autorización
-  const renderAuthStatus = (status: string, date: string) => {
+  // Función para obtener el ícono de estado
+  const getStatusIcon = (status: string) => {
     switch (status) {
       case "approved":
-        return (
-          <div className="flex items-center gap-2">
-            <CheckCircle2Icon className="h-5 w-5 text-green-500" />
-            <div className="flex flex-col">
-              <span className="text-sm font-medium text-green-600">Aprobado</span>
-              {date && <span className="text-xs text-muted-foreground">{date}</span>}
-            </div>
-          </div>
-        )
+        return <CheckCircle2Icon className="h-4 w-4 text-green-600" />
       case "rejected":
-        return (
-          <div className="flex items-center gap-2">
-            <XCircleIcon className="h-5 w-5 text-red-500" />
-            <div className="flex flex-col">
-              <span className="text-sm font-medium text-red-600">Rechazado</span>
-              {date && <span className="text-xs text-muted-foreground">{date}</span>}
-            </div>
-          </div>
-        )
+        return <XCircleIcon className="h-4 w-4 text-red-600" />
       case "pending":
-        return (
-          <div className="flex items-center gap-2">
-            <ClockIcon className="h-5 w-5 text-gray-400" />
-            <span className="text-sm font-medium text-gray-500">Pendiente</span>
-          </div>
-        )
+        return <ClockIcon className="h-4 w-4 text-yellow-600" />
       default:
-        return null
+        return <AlertCircleIcon className="h-4 w-4 text-gray-400" />
     }
   }
 
-  // Formatear fecha para mostrar
-  const formatDate = (dateString: string) => {
+  // Función para obtener el color del badge de estado
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case "Completado":
+        return "default" // Verde
+      case "En Proceso":
+        return "secondary" // Azul
+      case "Rechazado":
+        return "destructive" // Rojo
+      case "No Iniciado":
+        return "outline" // Gris
+      default:
+        return "outline"
+    }
+  }
+
+  // Función para obtener el ícono del estado del documento
+  const getDocumentStatusIcon = (status: string) => {
+    switch (status) {
+      case "Completado":
+        return <CheckCircle2Icon className="h-4 w-4" />
+      case "En Proceso":
+        return <ClockIcon className="h-4 w-4" />
+      case "Rechazado":
+        return <XCircleIcon className="h-4 w-4" />
+      case "No Iniciado":
+        return <AlertCircleIcon className="h-4 w-4" />
+      default:
+        return <AlertCircleIcon className="h-4 w-4" />
+    }
+  }
+
+  // Cargar datos cuando el componente se monta o cuando cambia la autenticación
+  React.useEffect(() => {
+    if (!authLoading) {
+      loadData()
+    }
+  }, [params.id, authLoading, user])
+
+  // Mostrar loading mientras se cargan los datos de autenticación
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
+
+  // Mostrar error de permisos si el usuario no tiene acceso
+  if (permissionError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen space-y-4">
+        <ShieldAlertIcon className="h-16 w-16 text-red-500" />
+        <h1 className="text-2xl font-bold text-red-600">Acceso Denegado</h1>
+        <p className="text-gray-600 text-center max-w-md">{permissionError}</p>
+        <Button onClick={() => router.push("/dashboard")} variant="outline">
+          Volver al Dashboard
+        </Button>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
+
+  if (!item) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen space-y-4">
+        <AlertCircleIcon className="h-16 w-16 text-gray-400" />
+        <h1 className="text-2xl font-bold">Documento no encontrado</h1>
+        <Button onClick={() => router.push("/dashboard")} variant="outline">
+          Volver al Dashboard
+        </Button>
+      </div>
+    )
+  }
+
+  // Agregar un botón para verificar el account_access del usuario actual
+  const checkUserAccess = async () => {
+    if (!user) return
+
     try {
-      const date = new Date(dateString)
-      return new Intl.DateTimeFormat("es-MX", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(date)
-    } catch (e) {
-      return dateString
+      toast.info(`Verificando acceso para ${user.name}...`)
+      const userAccess = await accountAccessApi.getByUserName(user.name)
+
+      if (userAccess) {
+        toast.success(`Acceso encontrado para ${user.name}. ID: ${userAccess.id}`)
+        console.log("✅ Datos de acceso:", userAccess)
+      } else {
+        toast.error(`No se encontró acceso para ${user.name}`)
+        console.log("❌ No se encontró acceso para el usuario")
+      }
+    } catch (error) {
+      console.error("Error al verificar acceso:", error)
+      toast.error("Error al verificar acceso")
     }
-  }
-
-  React.useEffect(() => {
-    loadData()
-  }, [params.id, authLoading])
-
-  // Resetear estados cuando cambia el ID del documento
-  React.useEffect(() => {
-    const newDocumentId = Number.parseInt(params.id)
-    if (documentIdRef.current !== newDocumentId) {
-      setAuthorizationsProcessed(false)
-      setIsProcessingAuthorizations(false)
-      documentIdRef.current = newDocumentId
-    }
-  }, [params.id])
-
-  if (isLoading || authLoading) {
-    return (
-      <div className="flex min-h-screen flex-col">
-        <div className="flex flex-1 items-center justify-center">
-          <div className="flex flex-col items-center gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Cargando documento...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!item || permissionError) {
-    return (
-      <div className="flex min-h-screen flex-col">
-        <div className="flex flex-1 items-center justify-center p-4">
-          <Card className="w-full max-w-md">
-            <CardContent className="flex flex-col items-center justify-center p-6">
-              <ShieldAlertIcon className="mb-2 h-10 w-10 text-destructive" />
-              <h3 className="mb-2 text-lg font-medium">Acceso denegado</h3>
-              <p className="text-center text-sm text-muted-foreground">
-                {permissionError || "No tienes permisos para ver este documento."}
-              </p>
-              <Button className="mt-4" onClick={() => router.push("/dashboard")}>
-                Volver al dashboard
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    )
   }
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="container mx-auto max-w-5xl py-6">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">
-              {isEditing ? (
-                <Input
-                  value={editableFields.header}
-                  onChange={(e) => setEditableFields({ ...editableFields, header: e.target.value })}
-                  className="max-w-md text-2xl font-bold"
-                />
-              ) : (
-                item.header
-              )}
-            </h1>
-            <div className="mt-1 flex items-center gap-3">
-              <Badge variant="outline" className="px-1.5 text-muted-foreground">
-                {item.type}
-              </Badge>
-              <div className="flex items-center gap-2">
-                {renderStatus(item.status)}
-                {isEditing && <span className="text-xs text-muted-foreground">(Automático)</span>}
-              </div>
-            </div>
+    <div className="container mx-auto py-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2">
+            <h1 className="text-2xl font-bold">{item.header}</h1>
+            <Badge variant={getStatusBadgeVariant(item.status)} className="flex items-center space-x-1">
+              {getDocumentStatusIcon(item.status)}
+              <span>{item.status}</span>
+            </Badge>
           </div>
-          <div className="flex gap-2">
-            {isEditing ? (
-              <>
-                <Button onClick={handleSave} disabled={isSaving}>
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Guardando...
-                    </>
-                  ) : (
-                    <>
-                      <SaveIcon className="mr-2 h-4 w-4" />
-                      Guardar
-                    </>
-                  )}
-                </Button>
-                <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isSaving}>
-                  Cancelar
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button onClick={() => router.push("/dashboard")} variant="outline" className="mr-2">
-                  Volver al Dashboard
-                </Button>
-                <Button onClick={() => setIsEditing(true)}>
-                  <PencilIcon className="mr-2 h-4 w-4" />
-                  Editar
-                </Button>
-              </>
-            )}
-          </div>
+          <p className="text-muted-foreground">ID: {item.id}</p>
         </div>
+        <div className="flex items-center space-x-2">
+          {isEditing ? (
+            <>
+              <Button onClick={() => setIsEditing(false)} variant="outline" size="sm">
+                Cancelar
+              </Button>
+              <Button onClick={handleSave} disabled={isSaving} size="sm">
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <SaveIcon className="h-4 w-4 mr-2" />}
+                Guardar
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => setIsEditing(true)} size="sm">
+              <PencilIcon className="h-4 w-4 mr-2" />
+              Editar
+            </Button>
+          )}
+        </div>
+      </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-4 grid w-full grid-cols-4 lg:w-auto">
-            <TabsTrigger value="general">Información General</TabsTrigger>
-            <TabsTrigger value="links">Enlaces ({item.links?.length || 0})</TabsTrigger>
-            <TabsTrigger value="authorizations">Autorizaciones</TabsTrigger>
-            <TabsTrigger value="signed">Documentos Firmados ({documentosFirmados.length})</TabsTrigger>
-          </TabsList>
+      {/* Tabs (sin la pestaña de Firmas) */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="authorizations">
+            Autorizaciones
+            {item.authorizations && (
+              <Badge variant="secondary" className="ml-2">
+                {item.authorizations.filter((auth) => auth.status === "approved").length}/{item.authorizations.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="links">
+            Enlaces
+            {item.links && (
+              <Badge variant="secondary" className="ml-2">
+                {item.links.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="signatures">
+            Documentos Firmados
+            <Badge variant="secondary" className="ml-2">
+              {documentosFirmados.length}
+            </Badge>
+          </TabsTrigger>
+        </TabsList>
 
-          <TabsContent value="general" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Detalles del Documento</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label>ID</Label>
-                    <div className="mt-1 rounded-md border p-2">{item.id}</div>
-                  </div>
-                  <div>
-                    <Label>Tipo</Label>
-                    <div className="mt-1 rounded-md border p-2">{item.type}</div>
-                  </div>
-                  <div>
-                    <Label>Fecha Límite</Label>
-                    {isEditing ? (
-                      <Input
-                        type="date"
-                        value={editableFields.limit_date}
-                        onChange={(e) => setEditableFields({ ...editableFields, limit_date: e.target.value })}
-                        className="mt-1"
-                      />
-                    ) : (
-                      <div className="mt-1 flex items-center gap-2 rounded-md border p-2">
-                        <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                        {item.limit_date}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <Label>Revisor</Label>
-                    {isEditing ? (
-                      <Select
-                        value={editableFields.reviewer}
-                        onValueChange={(value) => setEditableFields({ ...editableFields, reviewer: value })}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Seleccionar revisor" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Asignar revisor">Asignar revisor</SelectItem>
-                          <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
-                          <SelectItem value="Jamik Tashpulatov">Jamik Tashpulatov</SelectItem>
-                          <SelectItem value="Carlos Méndez">Carlos Méndez</SelectItem>
-                          <SelectItem value="María García">María García</SelectItem>
-                          <SelectItem value="Laura Sánchez">Laura Sánchez</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <div className="mt-1 rounded-md border p-2">{item.reviewer}</div>
-                    )}
-                  </div>
-                  {item.target && (
-                    <div>
-                      <Label>Objetivo</Label>
-                      <div className="mt-1 rounded-md border p-2">{item.target}</div>
-                    </div>
-                  )}
-                  {item.limit && (
-                    <div>
-                      <Label>Límite</Label>
-                      <div className="mt-1 rounded-md border p-2">{item.limit}</div>
-                    </div>
-                  )}
-                </div>
-
-                <Separator />
-
-                <div>
-                  <Label>Descripción</Label>
+        {/* Tab: General */}
+        <TabsContent value="general" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Información General</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="header">Título</Label>
                   {isEditing ? (
-                    <Textarea
-                      value={editableFields.description}
-                      onChange={(e) => setEditableFields({ ...editableFields, description: e.target.value })}
-                      className="mt-1 min-h-[100px]"
-                      placeholder="Añade una descripción del documento..."
+                    <Input
+                      id="header"
+                      value={editableFields.header}
+                      onChange={(e) => setEditableFields({ ...editableFields, header: e.target.value })}
                     />
                   ) : (
-                    <div className="mt-1 min-h-[50px] rounded-md border p-2">
-                      {item.description || <span className="text-muted-foreground">Sin descripción</span>}
-                    </div>
+                    <p className="text-sm">{item.header}</p>
                   )}
                 </div>
 
-                <div>
-                  <Label>Notas</Label>
+                <div className="space-y-2">
+                  <Label>Tipo</Label>
+                  <p className="text-sm">{item.type}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Estado</Label>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant={getStatusBadgeVariant(item.status)} className="flex items-center space-x-1">
+                      {getDocumentStatusIcon(item.status)}
+                      <span>{item.status}</span>
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">(Calculado automáticamente)</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="reviewer">Revisor</Label>
                   {isEditing ? (
-                    <Textarea
-                      value={editableFields.notes}
-                      onChange={(e) => setEditableFields({ ...editableFields, notes: e.target.value })}
-                      className="mt-1 min-h-[100px]"
-                      placeholder="Añade notas adicionales..."
+                    <Input
+                      id="reviewer"
+                      value={editableFields.reviewer}
+                      onChange={(e) => setEditableFields({ ...editableFields, reviewer: e.target.value })}
                     />
                   ) : (
-                    <div className="mt-1 min-h-[50px] rounded-md border p-2">
-                      {item.notes || <span className="text-muted-foreground">Sin notas</span>}
+                    <p className="text-sm">{item.reviewer}</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Objetivo</Label>
+                  <p className="text-sm">{item.target}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Límite</Label>
+                  <p className="text-sm">{item.limit}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="limit_date">Fecha Límite</Label>
+                  {isEditing ? (
+                    <Input
+                      id="limit_date"
+                      type="date"
+                      value={editableFields.limit_date}
+                      onChange={(e) => setEditableFields({ ...editableFields, limit_date: e.target.value })}
+                    />
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">{item.limit_date}</span>
                     </div>
                   )}
                 </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </div>
 
-          <TabsContent value="links" className="space-y-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Enlaces a Documentos</CardTitle>
-                {isEditing && (
-                  <Button variant="outline" size="sm" onClick={() => setShowNewLinkForm(!showNewLinkForm)}>
-                    {showNewLinkForm ? "Cancelar" : "Añadir Enlace"}
+              <Separator />
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Descripción</Label>
+                {isEditing ? (
+                  <Textarea
+                    id="description"
+                    value={editableFields.description}
+                    onChange={(e) => setEditableFields({ ...editableFields, description: e.target.value })}
+                    rows={3}
+                  />
+                ) : (
+                  <p className="text-sm">{item.description || "Sin descripción"}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notas</Label>
+                {isEditing ? (
+                  <Textarea
+                    id="notes"
+                    value={editableFields.notes}
+                    onChange={(e) => setEditableFields({ ...editableFields, notes: e.target.value })}
+                    rows={3}
+                  />
+                ) : (
+                  <p className="text-sm">{item.notes || "Sin notas"}</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab: Autorizaciones */}
+        <TabsContent value="authorizations" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center space-x-2">
+                  <ShieldIcon className="h-5 w-5" />
+                  <span>Autorizaciones Requeridas</span>
+                </CardTitle>
+                {user && (
+                  <Button onClick={checkUserAccess} variant="outline" size="sm">
+                    Verificar Mi Acceso
                   </Button>
                 )}
-              </CardHeader>
-              <CardContent>
-                {showNewLinkForm && isEditing && (
-                  <div className="mb-4 space-y-3 rounded-md border p-3">
-                    <div>
-                      <Label htmlFor="link-title">Título del documento</Label>
-                      <Input
-                        id="link-title"
-                        placeholder="Informe mensual, Presupuesto, etc."
-                        value={newLink.title}
-                        onChange={(e) => setNewLink({ ...newLink, title: e.target.value })}
-                        className="mt-1"
-                      />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {item.authorizations && item.authorizations.length > 0 ? (
+                <div className="space-y-3">
+                  {item.authorizations.map((auth, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        {getStatusIcon(auth.status)}
+                        <div>
+                          <p className="font-medium">{auth.name}</p>
+                          <p className="text-sm text-muted-foreground">{auth.role}</p>
+                          {auth.date && <p className="text-xs text-muted-foreground">Fecha: {auth.date}</p>}
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {/* Solo mostrar controles si el usuario actual es el que debe autorizar */}
+                        {user && auth.name === user.name && auth.status === "pending" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openSignDialog(index)}
+                              className="text-green-600 hover:text-green-700"
+                            >
+                              <ShieldIcon className="h-4 w-4 mr-1" />
+                              Firmar y Aprobar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRejectDocument(index)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <XCircleIcon className="h-4 w-4 mr-1" />
+                              Rechazar
+                            </Button>
+                          </>
+                        )}
+                        {/* Mostrar estado actual */}
+                        <Badge
+                          variant={
+                            auth.status === "approved"
+                              ? "default"
+                              : auth.status === "rejected"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                        >
+                          {auth.status === "approved"
+                            ? "Aprobado"
+                            : auth.status === "rejected"
+                              ? "Rechazado"
+                              : "Pendiente"}
+                        </Badge>
+                      </div>
                     </div>
-                    <div>
-                      <Label htmlFor="link-url">URL del documento</Label>
-                      <Input
-                        id="link-url"
-                        placeholder="https://organizacion-my.sharepoint.com/..."
-                        value={newLink.url}
-                        onChange={(e) => setNewLink({ ...newLink, url: e.target.value })}
-                        className="mt-1"
-                      />
-                    </div>
-                    <Button onClick={handleAddLink} className="w-full">
-                      Añadir Enlace
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-center py-8">No hay autorizaciones configuradas</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab: Enlaces */}
+        <TabsContent value="links" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center space-x-2">
+                  <LinkIcon className="h-5 w-5" />
+                  <span>Enlaces Relacionados</span>
+                </CardTitle>
+                <Button onClick={() => setShowNewLinkForm(true)} size="sm">
+                  <LinkIcon className="h-4 w-4 mr-2" />
+                  Añadir Enlace
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Formulario para nuevo enlace */}
+              {showNewLinkForm && (
+                <div className="space-y-3 p-4 border rounded-lg bg-muted/50 mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <Input
+                      placeholder="Título del enlace"
+                      value={newLink.title}
+                      onChange={(e) => setNewLink({ ...newLink, title: e.target.value })}
+                    />
+                    <Input
+                      placeholder="URL del enlace"
+                      value={newLink.url}
+                      onChange={(e) => setNewLink({ ...newLink, url: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button onClick={handleAddLink} size="sm">
+                      Añadir
+                    </Button>
+                    <Button onClick={() => setShowNewLinkForm(false)} variant="outline" size="sm">
+                      Cancelar
                     </Button>
                   </div>
-                )}
+                </div>
+              )}
 
-                {item.links && item.links.length > 0 ? (
-                  <div className="space-y-3">
-                    {item.links.map((link) => (
-                      <div key={link.id} className="flex items-center justify-between rounded-md border p-3">
-                        <div className="flex items-center gap-2 overflow-hidden">
-                          <LinkIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium">{link.title}</p>
-                            <p className="truncate text-xs text-muted-foreground">{link.url}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="ghost" size="sm" asChild>
-                            <a href={link.url} target="_blank" rel="noopener noreferrer">
-                              <ExternalLinkIcon className="h-4 w-4" />
-                            </a>
-                          </Button>
-                          {isEditing && (
-                            <Button variant="ghost" size="sm" onClick={() => handleDeleteLink(link.id)}>
-                              <Trash2Icon className="h-4 w-4" />
-                            </Button>
-                          )}
+              {/* Lista de enlaces */}
+              {item.links && item.links.length > 0 ? (
+                <div className="space-y-3">
+                  {item.links.map((link) => (
+                    <div key={link.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <ExternalLinkIcon className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="font-medium">{link.title}</p>
+                          <p className="text-sm text-muted-foreground">{link.url}</p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <LinkIcon className="mb-2 h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">No hay enlaces añadidos</p>
-                    {isEditing && (
-                      <Button variant="outline" size="sm" className="mt-2" onClick={() => setShowNewLinkForm(true)}>
-                        Añadir primer enlace
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="authorizations" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ShieldIcon className="h-5 w-5" />
-                  Autorizaciones Requeridas
-                  {isProcessingAuthorizations && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {item.authorizations && item.authorizations.length > 0 ? (
-                  <div className="space-y-4">
-                    {item.authorizations.map((auth, index) => (
-                      <div
-                        key={`${auth.name}-${index}`}
-                        className="flex items-center justify-between rounded-md border p-4"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                            <span className="text-sm font-medium text-primary">
-                              {auth.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")
-                                .toUpperCase()}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="font-medium">{auth.name}</p>
-                            <p className="text-sm text-muted-foreground">{auth.role}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {renderAuthStatus(auth.status, auth.date)}
-                          {canModifyAuthorization(auth.name) && auth.status === "pending" && (
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-green-200 text-green-700 hover:bg-green-50"
-                                onClick={() => startSigningProcess(index)}
-                              >
-                                <ShieldIcon className="mr-1 h-4 w-4" />
-                                Firmar Documento
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-red-200 text-red-700 hover:bg-red-50"
-                                onClick={() => handleAuthStatusChange(index, "rejected")}
-                              >
-                                <XCircleIcon className="mr-1 h-4 w-4" />
-                                Rechazar
-                              </Button>
-                            </div>
-                          )}
-                        </div>
+                      <div className="flex items-center space-x-2">
+                        <Button size="sm" variant="outline" asChild>
+                          <a href={link.url} target="_blank" rel="noopener noreferrer">
+                            <ExternalLinkIcon className="h-4 w-4 mr-1" />
+                            Abrir
+                          </a>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDeleteLink(link.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2Icon className="h-4 w-4" />
+                        </Button>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <ShieldIcon className="mb-2 h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">No hay autorizaciones configuradas</p>
-                    {isProcessingAuthorizations && (
-                      <p className="text-xs text-muted-foreground mt-2">Cargando autorizaciones...</p>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-center py-8">No hay enlaces configurados</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          <TabsContent value="signed" className="space-y-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
+        {/* Tab: Documentos Firmados (mejorado para mostrar TODAS las firmas) */}
+        <TabsContent value="signatures" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center space-x-2">
                   <FileIcon className="h-5 w-5" />
-                  Documentos Firmados
+                  <span>Documentos Firmados</span>
                 </CardTitle>
-                <Button variant="outline" size="sm" onClick={testDocumentosFirmadosEndpoint}>
-                  🧪 Probar Endpoint
-                </Button>
-              </CardHeader>
-              <CardContent>
-                {loadingDocumentosFirmados ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    <span className="ml-2 text-sm text-muted-foreground">Cargando documentos firmados...</span>
+                <div className="flex space-x-2">
+                  <Button
+                    onClick={loadDocumentosFirmados}
+                    variant="outline"
+                    size="sm"
+                    disabled={loadingDocumentosFirmados}
+                  >
+                    {loadingDocumentosFirmados ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <DownloadIcon className="h-4 w-4 mr-2" />
+                    )}
+                    Actualizar
+                  </Button>
+                  <Button onClick={testDocumentosFirmadosEndpoint} variant="outline" size="sm">
+                    🧪 Test API
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingDocumentosFirmados ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                  <span className="ml-2">Cargando documentos firmados...</span>
+                </div>
+              ) : documentosFirmados.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="text-sm text-muted-foreground mb-4">
+                    Mostrando todas las firmas para este documento (de todos los usuarios autorizados)
                   </div>
-                ) : documentosFirmados.length > 0 ? (
-                  <div className="space-y-3">
-                    {documentosFirmados.map((doc, index) => (
-                      <div key={index} className="flex items-center justify-between rounded-md border p-3">
-                        <div className="flex items-center gap-3">
-                          <FileIcon className="h-5 w-5 text-green-600" />
-                          <div>
-                            <p className="font-medium">{doc.filename}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Creado: {formatDate(doc.created_at)} • Tamaño: {(doc.size / 1024).toFixed(1)} KB
-                            </p>
-                          </div>
+                  {documentosFirmados.map((firma, index) => (
+                    <div key={firma.id || index} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <FileIcon className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="font-medium">Documento Firmado #{firma.id}</p>
+                          <p className="text-sm text-muted-foreground">URL: {firma.url_firma}</p>
+                          <p className="text-xs text-muted-foreground">Documento ID: {firma.id_documentos}</p>
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => handleDownloadSignedDocument(doc.filename)}>
-                          <DownloadIcon className="mr-1 h-4 w-4" />
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Button size="sm" variant="outline" asChild>
+                          <a href={firma.url_firma} target="_blank" rel="noopener noreferrer">
+                            <ExternalLinkIcon className="h-4 w-4 mr-1" />
+                            Ver
+                          </a>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDownloadSignedDocument(firma.url_firma, firma.id || 0)}
+                        >
+                          <DownloadIcon className="h-4 w-4 mr-1" />
                           Descargar
                         </Button>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <FileIcon className="mb-2 h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">No hay documentos firmados disponibles</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Los documentos aparecerán aquí después de ser firmados digitalmente
-                    </p>
-                    <Button variant="outline" size="sm" className="mt-3" onClick={loadDocumentosFirmados}>
-                      🔄 Recargar Lista
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <FileIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No hay documentos firmados disponibles</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Los documentos aparecerán aquí después de ser firmados digitalmente por cualquier usuario autorizado
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-      {/* Dialog para firma digital */}
+      {/* Dialog simplificado para confirmación de firma */}
       <Dialog open={showSignDialog} onOpenChange={setShowSignDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShieldIcon className="h-5 w-5 text-green-600" />
-              Firmar Documento Digitalmente
+            <DialogTitle className="flex items-center space-x-2">
+              <ShieldIcon className="h-5 w-5" />
+              <span>Confirmar Firma Digital</span>
             </DialogTitle>
-            <DialogDescription>
-              Para firmar este documento, necesitas subir tu archivo de clave pública (.pem). Este proceso verificará tu
-              identidad y creará una firma digital válida.
-            </DialogDescription>
+            <DialogDescription>¿Estás seguro de que quieres firmar este documento digitalmente?</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             {/* Información del documento */}
-            <div className="rounded-md bg-muted/50 p-3">
-              <p className="text-sm font-medium">Documento a firmar:</p>
-              <p className="text-sm text-muted-foreground">{item?.header}</p>
-              {currentAuthIndex !== null && item?.authorizations && (
-                <p className="text-sm text-muted-foreground">
-                  Firmando como: {item.authorizations[currentAuthIndex]?.name}
-                </p>
-              )}
+            <div className="p-3 bg-muted rounded-lg">
+              <p className="font-medium">{item?.header}</p>
+              <p className="text-sm text-muted-foreground">ID: {item?.id}</p>
             </div>
 
-            {/* Área de subida de archivo */}
-            <div
-              className={`relative rounded-lg border-2 border-dashed p-6 text-center transition-colors ${
-                dragActive
-                  ? "border-primary bg-primary/5"
-                  : selectedFile
-                    ? "border-green-500 bg-green-50 dark:bg-green-950"
-                    : "border-muted-foreground/25 hover:border-muted-foreground/50"
-              }`}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-            >
-              <input
-                type="file"
-                accept=".pem"
-                onChange={handleFileUpload}
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              />
-
-              {selectedFile ? (
-                <div className="flex flex-col items-center gap-2">
-                  <CheckCircle2Icon className="h-8 w-8 text-green-600" />
-                  <p className="font-medium text-green-700">{selectedFile.name}</p>
-                  <p className="text-sm text-green-600">Archivo .pem seleccionado correctamente</p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2">
-                  <UploadIcon className="h-8 w-8 text-muted-foreground" />
-                  <p className="font-medium">Arrastra tu archivo .pem aquí</p>
-                  <p className="text-sm text-muted-foreground">o haz clic para seleccionar</p>
-                </div>
-              )}
-            </div>
+            {/* Warning de confirmación */}
+            <Alert>
+              <AlertTriangleIcon className="h-4 w-4" />
+              <AlertDescription>
+                <strong>Proceso automatizado:</strong> El sistema utilizará automáticamente tus claves criptográficas
+                para firmar el documento. Esta acción no se puede deshacer y actualizará tu autorización a "aprobada".
+              </AlertDescription>
+            </Alert>
 
             {/* Información adicional */}
-            <div className="rounded-md bg-blue-50 p-3 dark:bg-blue-950">
-              <p className="text-sm text-blue-800 dark:text-blue-200">
-                <strong>Importante:</strong> Tu archivo .pem contiene tu clave pública que se usará para verificar tu
-                identidad. Este proceso es seguro y no compromete tu clave privada.
-              </p>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>• La firma se realizará automáticamente con tus credenciales</p>
+              <p>• El documento firmado se guardará en Azure Blob Storage</p>
+              <p>• Tu autorización se marcará como "aprobada" automáticamente</p>
+              <p>• El estado del documento se actualizará según las autorizaciones</p>
             </div>
           </div>
 
-          <DialogFooter className="flex gap-2">
-            <Button variant="outline" onClick={() => setShowSignDialog(false)} disabled={signingDocument}>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSignDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSignDocument} disabled={!selectedFile || signingDocument}>
+            <Button onClick={handleSignDocument} disabled={signingDocument}>
               {signingDocument ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   Firmando...
                 </>
               ) : (
                 <>
-                  <ShieldIcon className="mr-2 h-4 w-4" />
-                  Firmar Documento
+                  <ShieldIcon className="h-4 w-4 mr-2" />
+                  Confirmar Firma
                 </>
               )}
             </Button>
