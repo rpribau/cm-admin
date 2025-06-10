@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       } catch (apiError) {
         console.error("❌ Error de API durante autenticación:", apiError)
         return NextResponse.json(
-          { success: false, message: "Error de autenticación. No se pudo conectar con el servidor API." },
+          { success: false, message: "Error de autenticación. No se pudo conectar con el servidor API externo." },
           { status: 500 },
         )
       }

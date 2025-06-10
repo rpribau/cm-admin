@@ -1,5 +1,5 @@
 // Cambiar la primera línea para usar explícitamente la dirección IPv4
-const API_BASE_URL = "http://172.172.219.21:8000"
+const API_BASE_URL = "http://4.157.251.39:8000"
 
 // Types based on the OpenAPI specification
 export interface DocumentoModel {
@@ -20,7 +20,7 @@ export interface AutorizacionModel {
   name: string
   role: string
   status?: string | null
-  date: string | null
+  date?: string | null // Cambiado para que coincida con el schema
 }
 
 export interface LinkModel {
@@ -28,6 +28,13 @@ export interface LinkModel {
   documento_id: number
   title: string
   url: string
+}
+
+// Nueva interfaz para FirmaDocumentoModel
+export interface FirmaDocumentoModel {
+  id?: number | null
+  id_documentos: number
+  url_firma: string
 }
 
 export interface AccountDetailsCreate {
@@ -58,7 +65,7 @@ export interface AccountAccessResponse extends AccountAccessCreate {
 export interface SignatureRequest {
   account_access_id: number
   documento_id: number
-  public_key_pem: string
+  public_key_pem?: string // Hacer opcional ya que no se usa en el proceso automatizado
 }
 
 export interface SignatureResponse {
@@ -93,7 +100,7 @@ class ApiError extends Error {
   }
 }
 
-// Mejorar el manejo de errores en la función fetchApi
+// Modificar la función fetchApi para mostrar más detalles sobre errores
 async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint
   const url = `${API_BASE_URL}/${cleanEndpoint}`
@@ -101,14 +108,20 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
   const defaultHeaders: HeadersInit = {
     "Content-Type": "application/json",
     Accept: "application/json",
+    // Agregar headers para CORS si es necesario
+    "Access-Control-Allow-Origin": "*",
   }
 
   try {
     console.log(`Fetching from: ${url}`)
+    console.log(`Method: ${options.method || "GET"}`)
+    if (options.body) {
+      console.log(`Body:`, JSON.parse(options.body as string))
+    }
 
     // Agregar un timeout para evitar esperas largas si hay problemas de conexión
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 segundos de timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 segundos de timeout para API externa
 
     const response = await fetch(url, {
       ...options,
@@ -117,14 +130,20 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
         ...options.headers,
       },
       signal: controller.signal,
+      // Agregar mode para CORS
+      mode: "cors",
     })
 
     clearTimeout(timeoutId)
+
+    console.log(`Response status: ${response.status}`)
+    console.log(`Response headers:`, Object.fromEntries(response.headers.entries()))
 
     if (!response.ok) {
       let errorMessage = `API Error: ${response.status} ${response.statusText}`
       try {
         const errorData = await response.json()
+        console.log(`Error response:`, errorData)
         if (errorData.detail) {
           if (Array.isArray(errorData.detail)) {
             errorMessage = errorData.detail.map((err: any) => `${err.loc.join(" -> ")}: ${err.msg}`).join("; ")
@@ -133,7 +152,17 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
           }
         }
       } catch (e) {
-        // Si parsing JSON falla, usar el mensaje de error predeterminado
+        console.log(`No se pudo parsear la respuesta de error como JSON`)
+        // Intentar obtener el texto de error
+        try {
+          const errorText = await response.text()
+          console.log(`Error response text:`, errorText)
+          if (errorText) {
+            errorMessage += ` - ${errorText}`
+          }
+        } catch (textError) {
+          console.log(`No se pudo obtener el texto de error`)
+        }
       }
       throw new ApiError(errorMessage, response.status)
     }
@@ -142,7 +171,9 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
       return null as T
     }
 
-    return response.json()
+    const responseData = await response.json()
+    console.log(`Response data:`, responseData)
+    return responseData
   } catch (error) {
     console.error(`Error fetching from ${url}:`, error)
 
@@ -153,7 +184,7 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
       )
     }
 
-    if (error && typeof error === 'object' && 'name' in error && error.name === "AbortError") {
+    if (error.name === "AbortError") {
       throw new ApiError(
         `La conexión con ${url} ha excedido el tiempo de espera. Verifique que el servidor esté respondiendo.`,
         0,
@@ -178,47 +209,150 @@ export const documentoApi = {
   },
 
   async update(documento: DocumentoModel): Promise<DocumentoModel> {
+    console.log("🔄 Actualizando documento con datos:", documento)
+
+    // Asegurar que todos los campos requeridos estén presentes según el schema
+    const documentoToUpdate: DocumentoModel = {
+      id: documento.id,
+      header: documento.header,
+      type: documento.type || null,
+      status: documento.status || null,
+      target: documento.target || null,
+      limit: documento.limit || null,
+      limit_date: documento.limit_date,
+      reviewer: documento.reviewer || null,
+      description: documento.description || null,
+    }
+
     return fetchApi<DocumentoModel>("documentos/", {
       method: "PUT",
-      body: JSON.stringify(documento),
+      body: JSON.stringify(documentoToUpdate),
     })
   },
 }
 
-// Añadir una función para obtener autorizaciones por documento_id
+// CORREGIDO: API de autorizaciones usando solo endpoints que existen
 export const autorizacionApi = {
   async getAll(): Promise<AutorizacionModel[]> {
-    return fetchApi<AutorizacionModel[]>("autorizaciones/")
+    try {
+      return fetchApi<AutorizacionModel[]>("autorizaciones/")
+    } catch (error) {
+      console.error("Error al obtener todas las autorizaciones:", error)
+      return []
+    }
   },
 
   async create(autorizacion: AutorizacionModel): Promise<AutorizacionModel> {
+    // Asegurar que los campos requeridos estén presentes
+    const autorizacionToCreate: AutorizacionModel = {
+      id: autorizacion.id || null,
+      documento_id: autorizacion.documento_id,
+      name: autorizacion.name,
+      role: autorizacion.role,
+      status: autorizacion.status || null,
+      date: autorizacion.date || null,
+    }
+
     return fetchApi<AutorizacionModel>("autorizaciones/", {
       method: "POST",
-      body: JSON.stringify(autorizacion),
+      body: JSON.stringify(autorizacionToCreate),
     })
   },
 
   async update(autorizacion: AutorizacionModel): Promise<AutorizacionModel> {
+    console.log("🔄 Actualizando autorización con datos:", autorizacion)
+
+    // Asegurar que todos los campos requeridos estén presentes según el schema
+    const autorizacionToUpdate: AutorizacionModel = {
+      id: autorizacion.id,
+      documento_id: autorizacion.documento_id,
+      name: autorizacion.name,
+      role: autorizacion.role,
+      status: autorizacion.status || null,
+      date: autorizacion.date || null,
+    }
+
     return fetchApi<AutorizacionModel>("autorizaciones/", {
       method: "PUT",
-      body: JSON.stringify(autorizacion),
+      body: JSON.stringify(autorizacionToUpdate),
     })
   },
 
+  // CORREGIDO: Usar solo GET /autorizaciones/ y filtrar en el cliente
   async getByDocumentoId(documentoId: number): Promise<AutorizacionModel[]> {
-    // Usar el nuevo endpoint específico para obtener autorizaciones por documento_id
-    return fetchApi<AutorizacionModel[]>(`autorizaciones/documento/${documentoId}`)
+    try {
+      console.log(`🔍 Obteniendo autorizaciones para documento ${documentoId} (filtrado local)`)
+      const allAuths = await this.getAll()
+      const filteredAuths = allAuths.filter((auth) => auth.documento_id === documentoId)
+      console.log(`✅ Obtenidas ${filteredAuths.length} autorizaciones para documento ${documentoId}`)
+      return filteredAuths
+    } catch (error) {
+      console.error(`Error al obtener autorizaciones para documento ${documentoId}:`, error)
+      return []
+    }
   },
 
+  // CORREGIDO: Usar solo GET /autorizaciones/ y filtrar en el cliente
   async getByDocumentoIdAndNombre(documentoId: number, nombre: string): Promise<AutorizacionModel | null> {
-    // Usar el nuevo endpoint para obtener una autorización específica por documento_id y nombre
     try {
-      return fetchApi<AutorizacionModel>(
-        `autorizaciones/documento/${documentoId}/usuario/${encodeURIComponent(nombre)}`,
-      )
+      console.log(`🔍 Buscando autorización para documento ${documentoId} y usuario ${nombre} (filtrado local)`)
+      const allAuths = await this.getAll()
+      const autorization = allAuths.find((auth) => auth.documento_id === documentoId && auth.name === nombre)
+      console.log(`${autorization ? "✅ Encontrada" : "❌ No encontrada"} autorización para ${nombre}`)
+      return autorization || null
     } catch (error) {
       console.error(`Error al obtener autorización para documento ${documentoId} y usuario ${nombre}:`, error)
       return null
+    }
+  },
+
+  // Agregar método para eliminar autorizaciones duplicadas
+  async deleteDuplicates(documentoId: number): Promise<void> {
+    try {
+      console.log(`🧹 Iniciando limpieza de duplicados para documento ${documentoId}`)
+      const autorizaciones = await this.getByDocumentoId(documentoId)
+
+      // Agrupar por nombre para encontrar duplicados
+      const authsByName = new Map()
+      const duplicatesToDelete = []
+
+      for (const auth of autorizaciones) {
+        if (!auth.name) continue
+
+        if (authsByName.has(auth.name)) {
+          // Es un duplicado, decidir cuál mantener
+          const existing = authsByName.get(auth.name)
+
+          if (existing.status === "pending" && auth.status !== "pending") {
+            // El nuevo tiene un estado más avanzado, eliminar el existente
+            duplicatesToDelete.push(existing)
+            authsByName.set(auth.name, auth)
+          } else if (auth.status === "pending" && existing.status !== "pending") {
+            // El existente tiene un estado más avanzado, eliminar el nuevo
+            duplicatesToDelete.push(auth)
+          } else if (auth.id && existing.id) {
+            // Ambos tienen el mismo estado, mantener el más reciente
+            if (auth.id > existing.id) {
+              duplicatesToDelete.push(existing)
+              authsByName.set(auth.name, auth)
+            } else {
+              duplicatesToDelete.push(auth)
+            }
+          }
+        } else {
+          authsByName.set(auth.name, auth)
+        }
+      }
+
+      console.log(`🗑️ Encontrados ${duplicatesToDelete.length} duplicados para eliminar`)
+
+      // Aquí se implementaría la eliminación real si el API lo soporta
+      // Por ahora solo registramos los que se eliminarían
+      for (const dup of duplicatesToDelete) {
+        console.log(`  - Duplicado: ${dup.name} (ID: ${dup.id})`)
+      }
+    } catch (error) {
+      console.error(`Error al limpiar duplicados:`, error)
     }
   },
 }
@@ -246,6 +380,38 @@ export const linkApi = {
   async getByDocumentoId(documentoId: number): Promise<LinkModel[]> {
     const allLinks = await this.getAll()
     return allLinks.filter((link) => link.documento_id === documentoId)
+  },
+}
+
+// Nuevo API para FirmaDocumentos
+export const firmaDocumentoApi = {
+  async getAll(): Promise<FirmaDocumentoModel[]> {
+    return fetchApi<FirmaDocumentoModel[]>("firma_documentos/")
+  },
+
+  async create(firmaDocumento: FirmaDocumentoModel): Promise<FirmaDocumentoModel> {
+    return fetchApi<FirmaDocumentoModel>("firma_documentos/", {
+      method: "POST",
+      body: JSON.stringify(firmaDocumento),
+    })
+  },
+
+  async update(firmaDocumento: FirmaDocumentoModel): Promise<FirmaDocumentoModel> {
+    return fetchApi<FirmaDocumentoModel>("firma_documentos/", {
+      method: "PUT",
+      body: JSON.stringify(firmaDocumento),
+    })
+  },
+
+  async delete(firmaId: number): Promise<void> {
+    return fetchApi<void>(`firma_documentos/${firmaId}`, {
+      method: "DELETE",
+    })
+  },
+
+  async getByDocumentoId(documentoId: number): Promise<FirmaDocumentoModel[]> {
+    const allFirmas = await this.getAll()
+    return allFirmas.filter((firma) => firma.id_documentos === documentoId)
   },
 }
 
@@ -284,6 +450,7 @@ export const documentUploadApi = {
       const response = await fetch(url, {
         method: "POST",
         body: formData,
+        mode: "cors", // Agregar mode para CORS
       })
 
       if (!response.ok) {
@@ -364,6 +531,60 @@ export const accountAccessApi = {
       method: "PUT",
       body: JSON.stringify(access),
     })
+  },
+
+  // Nueva función para verificar si un usuario tiene acceso de firma
+  async getByUserName(userName: string): Promise<AccountAccessResponse | null> {
+    try {
+      console.log(`🔍 Buscando account_access para usuario: ${userName}`)
+      const allAccess = await this.getAll()
+      console.log(`📋 Total de account_access encontrados: ${allAccess.length}`)
+
+      // Mostrar todos los account_access para debugging
+      console.log(`📋 Todos los account_access disponibles:`)
+      allAccess.forEach((access, index) => {
+        console.log(
+          `  ${index + 1}. ID: ${access.id}, Signer: "${access.signer_name}", Employee: "${access.numero_empleado}"`,
+        )
+      })
+
+      // Buscar coincidencias exactas o parciales
+      const userAccess = allAccess.find(
+        (access) =>
+          access.signer_name === userName ||
+          access.signer_name.includes(userName.split(" ")[0]) ||
+          userName.includes(access.signer_name) ||
+          access.signer_name.toLowerCase() === userName.toLowerCase() ||
+          access.signer_name.toLowerCase().includes(userName.toLowerCase().split(" ")[0]),
+      )
+
+      if (userAccess) {
+        console.log(`✅ Encontrado account_access para ${userName}:`, userAccess)
+        return userAccess
+      } else {
+        console.log(`❌ No se encontró account_access para ${userName}`)
+        console.log(`🔍 Intentando búsqueda más flexible...`)
+
+        // Búsqueda más flexible por palabras individuales
+        const userWords = userName.toLowerCase().split(" ")
+        const flexibleMatch = allAccess.find((access) => {
+          const signerWords = access.signer_name.toLowerCase().split(" ")
+          return userWords.some((userWord) =>
+            signerWords.some((signerWord) => userWord.includes(signerWord) || signerWord.includes(userWord)),
+          )
+        })
+
+        if (flexibleMatch) {
+          console.log(`✅ Encontrado account_access con búsqueda flexible para ${userName}:`, flexibleMatch)
+          return flexibleMatch
+        }
+
+        return null
+      }
+    } catch (error) {
+      console.error(`❌ Error al buscar account_access para ${userName}:`, error)
+      return null
+    }
   },
 }
 
@@ -478,7 +699,7 @@ export const documentoCompletoApi = {
       description: doc.description || "",
       notes: "",
       authorizations:
-        doc.authorizations?.map((auth) => ({
+        doc.authorizaciones?.map((auth) => ({
           name: auth.name,
           role: auth.role,
           status: auth.status || "pending",
@@ -499,8 +720,8 @@ export const documentoCompletoApi = {
       header: frontendDoc.header,
       type: frontendDoc.type,
       status: frontendDoc.status,
-      target: frontendDoc.target ? Number.parseInt(frontendDoc.target) : null,
-      limit: frontendDoc.limit ? Number.parseInt(frontendDoc.limit) : null,
+      target: frontendDoc.target ? Number.parseInt(frontendDoc.target.toString()) : null,
+      limit: frontendDoc.limit ? Number.parseInt(frontendDoc.limit.toString()) : null,
       limit_date: frontendDoc.limit_date,
       reviewer: frontendDoc.reviewer,
       description: frontendDoc.description,
@@ -525,9 +746,27 @@ export const documentoCompletoApi = {
 // Digital Signature API functions
 export const digitalSignatureApi = {
   async signDocument(data: SignatureRequest): Promise<SignatureResponse> {
-    return fetchApi<SignatureResponse>("sign_document/", {
+    // Construir los query parameters
+    const queryParams = new URLSearchParams({
+      account_access_id: data.account_access_id.toString(),
+      documento_id: data.documento_id.toString(),
+    })
+
+    return fetchApi<SignatureResponse>(`sign_document/?${queryParams}`, {
       method: "POST",
-      body: JSON.stringify(data),
+      // No enviar body ya que los parámetros van en la URL
+    })
+  },
+
+  // Nuevo endpoint para firmar documentos con carga
+  async signDocumentWithUpload(data: SignatureRequest): Promise<SignatureResponse> {
+    const queryParams = new URLSearchParams({
+      account_access_id: data.account_access_id.toString(),
+      documento_id: data.documento_id.toString(),
+    })
+
+    return fetchApi<SignatureResponse>(`sign_document_with_upload/?${queryParams}`, {
+      method: "POST",
     })
   },
 
@@ -554,41 +793,27 @@ export const digitalSignatureApi = {
     return fetchApi<string>(`account_access/${accessId}/public_key`)
   },
 
-  // Nuevas funciones para documentos firmados
+  // Función mejorada para documentos firmados
   async getDocumentosFirmados(): Promise<DocumentoFirmado[]> {
     try {
-      console.log("🌐 Llamando a endpoint: documentos_firmados/")
-      const response = await fetchApi<any>("documentos_firmados/")
+      console.log("🌐 Llamando a endpoint: firma_documentos/")
+      const response = await fetchApi<FirmaDocumentoModel[]>("firma_documentos/")
 
-      console.log("📡 Respuesta cruda del API:", response)
+      console.log("📡 Respuesta del API:", response)
 
-      // Si la respuesta es directamente un array
+      // Según la documentación, debería devolver un array directamente
       if (Array.isArray(response)) {
         console.log("✅ Respuesta es array directo con", response.length, "elementos")
-        return response
+        // Convertir FirmaDocumentoModel a DocumentoFirmado para compatibilidad
+        return response.map((firma) => ({
+          filename: `documento_firmado_${firma.id_documentos}_${firma.id}.pdf`,
+          path: firma.url_firma,
+          size: 0, // No disponible en la respuesta
+          created_at: "", // No disponible en la respuesta
+        }))
       }
 
-      // Si la respuesta es un objeto que contiene un array
-      if (response && typeof response === "object") {
-        // Buscar propiedades comunes que podrían contener el array
-        const possibleKeys = ["documentos", "files", "data", "items", "results"]
-
-        for (const key of possibleKeys) {
-          if (response[key] && Array.isArray(response[key])) {
-            console.log(`✅ Encontrado array en propiedad '${key}' con`, response[key].length, "elementos")
-            return response[key]
-          }
-        }
-
-        // Si no encontramos un array en las propiedades comunes, buscar cualquier array
-        const arrayValues = Object.values(response).filter(Array.isArray)
-        if (arrayValues.length > 0) {
-          console.log("✅ Encontrado array en respuesta con", arrayValues[0].length, "elementos")
-          return arrayValues[0] as DocumentoFirmado[]
-        }
-      }
-
-      console.warn("⚠️ No se pudo extraer array de la respuesta, devolviendo array vacío")
+      console.warn("⚠️ Respuesta no es un array, devolviendo array vacío")
       return []
     } catch (error) {
       console.error("❌ Error en getDocumentosFirmados:", error)
