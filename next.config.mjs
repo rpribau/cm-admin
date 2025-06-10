@@ -2,6 +2,7 @@
 const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
+    
   },
   typescript: {
     ignoreBuildErrors: true,
@@ -9,6 +10,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  devIndicators: false,
   async rewrites() {
     return [
       {
